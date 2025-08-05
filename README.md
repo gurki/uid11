@@ -1,2 +1,4 @@
-# uuid11
-flexible, url-safe 64bit uuid in 11 characters
+# uuid11 Ξ
+flexible, url-safe, single-header 64bit uuid in 11 characters
+
+
