@@ -1,7 +1,7 @@
 # uuid11 Ξ
 flexible, url-safe, single-header 64bit uuid in 11 characters
 
-## random 🎲
+## Random 🎲
 ```
 75mc2sQdSji
 AiD2n4c2d9p
@@ -16,7 +16,7 @@ iYsvKPYXFo7
 1Ag98BdKNx7
 ```
 
-## time & random ⌚🎲
+## Time & Random ⌚🎲
 over sequential time points
 ```
 5Gg7kK8XiNh -> 2025-08-05T18:27:15.704
@@ -47,6 +47,5 @@ at single time point
 5Gg7ttok3LG -> 2025-08-05T18:32:27.225
 ```
 
-## acknowledgements
+## Acknowledgements
 - David Blackman and Sebastiano Vigna for their work on [fast PRNGs](https://prng.di.unimi.it/)
-- 
