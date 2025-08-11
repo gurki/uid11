@@ -1,8 +1,8 @@
 cmake_minimum_required( VERSION 3.28 FATAL_ERROR )
 
-project( uuid11 
+project( xid
 	VERSION 0.1.0
-	DESCRIPTION "flexible, url-safe, single-header 64bit uuid in 11 characters"
+	DESCRIPTION "flexible, url-safe, single-header 64bit uid in 11 characters"
 	LANGUAGES CXX
 )
 
@@ -19,8 +19,8 @@ target_include_directories( ${PROJECT_NAME}
 		$<INSTALL_INTERFACE:/>
 )
 
-option( UUID11_BUILD_EXAMPLES "Build uuid11 examples" ${PROJECT_IS_TOP_LEVEL} )
+option( XID_BUILD_EXAMPLES "Build xid examples" ${PROJECT_IS_TOP_LEVEL} )
 
-if ( UUID11_BUILD_EXAMPLES )
+if ( XID_BUILD_EXAMPLES )
 	add_subdirectory( examples )
 endif()

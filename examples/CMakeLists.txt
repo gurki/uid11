@@ -1,8 +1,8 @@
 cmake_minimum_required( VERSION 3.28 FATAL_ERROR )
 
-project( uuid11-examples
+project( xid-examples
 	VERSION 0.1.0
-	DESCRIPTION "small showcase demos"
+	DESCRIPTION "small showcase"
 	LANGUAGES CXX
 )
 
@@ -22,5 +22,5 @@ target_include_directories( ${PROJECT_NAME}
 
 target_link_libraries( ${PROJECT_NAME} 
     PRIVATE
-        uuid11
+        xid
 )

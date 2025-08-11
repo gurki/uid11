@@ -6,6 +6,9 @@
 #include <optional>
 
 
+namespace xid {
+
+
 ////////////////////////////////////////////////////////////////////////////////
 /*
     xoshiro256++
@@ -84,6 +87,8 @@ struct Uuid11
     static constexpr std::string_view alphabet { "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz" };
     static constexpr auto base = alphabet.size();
     static constexpr auto length = 11;
+    static constexpr std::string_view max = "jpXCZedGfVQ";  //  2527-06-23 06:20:44.4150000;
+
     inline static RandomU64 randu64;  
 
     uint64_t bytes;
@@ -106,11 +111,7 @@ struct Uuid11
     }
 
     static std::optional<Uuid11> from_string( std::string_view str ) 
-    {
-        if ( str.length() != length ) {
-            return std::nullopt;
-        }
-        
+    {       
         Uuid11 result;
         result.bytes = 0;
         
@@ -123,6 +124,10 @@ struct Uuid11
             }
             
             result.bytes = result.bytes * base + pos;
+        }
+
+        for ( int i = 0; i < length - str.size(); i++ ) {
+            result.bytes = result.bytes * base;
         }
         
         return result;
@@ -143,7 +148,6 @@ struct Uuid11
 struct Uuid11TR : public Uuid11 
 {
     inline static auto epoch = std::chrono::system_clock::time_point();
-    static constexpr std::string_view max = "jpXCZedGfVQ";  //  2527-06-23 06:20:44.4150000;
 
     Uuid11TR() 
     {
@@ -239,3 +243,6 @@ struct Uuid11SF : public Uuid11
         return epoch + std::chrono::milliseconds( bytes >> 22 );
     }
 };
+
+
+}   //  ::xid
