@@ -143,13 +143,14 @@ struct Uuid11
 struct Uuid11TR : public Uuid11 
 {
     inline static auto epoch = std::chrono::system_clock::time_point();
+    static constexpr std::string_view max = "jpXCZedGfVQ";  //  2527-06-23 06:20:44.4150000;
 
     Uuid11TR() 
     {
         const auto now = std::chrono::system_clock::now();
         const auto millis = std::chrono::duration_cast<std::chrono::milliseconds>( now.time_since_epoch() ).count();
         const uint64_t timeBits = static_cast<uint64_t>( millis );
-        const uint64_t randomBits = randu64() & 0xFFFFFULL;
+        const uint64_t randomBits = randu64() & ( 1ull << 20 - 1 );
         bytes = ( timeBits << 20 ) | randomBits;
     }
 

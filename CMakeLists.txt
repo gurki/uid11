@@ -19,7 +19,7 @@ target_include_directories( ${PROJECT_NAME}
 		$<INSTALL_INTERFACE:/>
 )
 
-option( UUID11_BUILD_EXAMPLES "Build uuid11 examples" OFF )
+option( UUID11_BUILD_EXAMPLES "Build uuid11 examples" ${PROJECT_IS_TOP_LEVEL} )
 
 if ( UUID11_BUILD_EXAMPLES )
 	add_subdirectory( examples )

@@ -28,5 +28,9 @@ int main()
         std::println( "{} -> {}", now.to_string(), now.timestamp() );
     }
 
+    Uuid11TR max;
+    max.bytes = UINT64_MAX;
+    std::println( "max: {} -> {}", max.to_string(), max.timestamp() );
+
     return EXIT_SUCCESS;
 }
