@@ -4,9 +4,51 @@
 #include <chrono>
 #include <print>
 #include <optional>
+#include <array>
 
 
 namespace xid {
+
+
+////////////////////////////////////////////////////////////////////////////////
+//  base58 (bitcoin alphabet)
+////////////////////////////////////////////////////////////////////////////////
+
+static constexpr std::string_view alphabet = 
+    "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+static constexpr uint8_t base = alphabet.size();
+static constexpr uint8_t length = 11;
+
+static constexpr std::array<uint8_t, 128> make_index() 
+{
+    std::array<uint8_t, 128> m {};
+    m.fill( 0xff );
+            
+    for ( int i = 0; i < alphabet.size(); ++i ) 
+    {
+        uint8_t c = static_cast<uint8_t>( alphabet[ i ] );
+
+        if ( c >= m.size() ) {
+            continue;
+        }
+
+        m[ c ] = static_cast<uint8_t>( i );
+    }
+
+    return m;
+}
+
+static constexpr auto index = make_index();
+
+
+////////////////////////////////////////////////////////////////////////////////
+//  helper
+////////////////////////////////////////////////////////////////////////////////
+
+constexpr std::uint64_t mask_n( std::size_t bits ) {
+    return bits >= 64 ? ~0ull : ( bits == 0 ? 0ull : ( ( 1ull << bits ) - 1ull ) );
+}
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -23,11 +65,11 @@ struct RandomU64
         seed( rd() );
     }
 
-    uint64_t operator()() { 
+    constexpr uint64_t operator()() { 
         return next(); 
     }
 
-    void seed( const uint64_t k ) 
+    constexpr void seed( const uint64_t k ) 
     {
         uint64_t sm = k;
 
@@ -40,7 +82,7 @@ struct RandomU64
         }
     }
 
-    uint64_t next() 
+    constexpr uint64_t next() 
     {
         const uint64_t result = rotl( s[0] + s[3], 23 ) + s[0];
         const uint64_t t = s[1] << 17;
@@ -61,14 +103,14 @@ struct RandomU64
 
         uint64_t s[4];
 
-        static uint64_t splitmix64( uint64_t& x ) {
+        static constexpr uint64_t splitmix64( uint64_t& x ) {
             uint64_t z = ( x += 0x9e3779b97f4a7c15ULL );
             z = ( z ^ ( z >> 30 ) ) * 0xbf58476d1ce4e5b9ULL;
             z = ( z ^ ( z >> 27 ) ) * 0x94d049bb133111ebULL;
             return z ^ ( z >> 31 );
         }
 
-        static inline uint64_t rotl( const uint64_t x, int k ) {
+        static constexpr uint64_t rotl( const uint64_t x, int k ) {
             return ( x << k ) | ( x >> ( 64 - k ) );
         }
 };
@@ -84,20 +126,18 @@ struct RandomU64
 struct Uuid11 
 {
     //  base58
-    static constexpr std::string_view alphabet { "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz" };
-    static constexpr auto base = alphabet.size();
-    static constexpr auto length = 11;
-    static constexpr std::string_view max = "jpXCZedGfVQ";  //  2527-06-23 06:20:44.4150000;
+    // static constexpr auto length = std::ceil( std::log( 2^ 64 ) / std::log( 58 ) );
+    static constexpr std::string_view max = "jpXCZedGfVQ";
 
-    inline static RandomU64 randu64;  
+    static inline thread_local RandomU64 randu64;  
 
     uint64_t bytes;
 
-    Uuid11() {
+    constexpr Uuid11() {
         bytes = randu64();
     }
     
-    std::string to_string() const 
+    constexpr std::string to_string() const 
     {
         std::string s( length, alphabet[ 0 ] );
         uint64_t v = bytes;
@@ -110,7 +150,7 @@ struct Uuid11
         return s;
     }
 
-    static std::optional<Uuid11> from_string( std::string_view str ) 
+    static constexpr std::optional<Uuid11> from_string( std::string_view str ) 
     {       
         Uuid11 result;
         result.bytes = 0;
@@ -154,7 +194,7 @@ struct Uuid11TR : public Uuid11
         const auto now = std::chrono::system_clock::now();
         const auto millis = std::chrono::duration_cast<std::chrono::milliseconds>( now.time_since_epoch() ).count();
         const uint64_t timeBits = static_cast<uint64_t>( millis );
-        const uint64_t randomBits = randu64() & ( 1ull << 20 - 1 );
+        const uint64_t randomBits = randu64() & mask_n( 20 );
         bytes = ( timeBits << 20 ) | randomBits;
     }
 
