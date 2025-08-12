@@ -60,16 +60,29 @@ constexpr std::uint64_t mask_n( std::size_t bits ) {
 */
 struct RandomU64 
 {    
-    RandomU64() {
-        static thread_local std::random_device rd;
-        seed( rd() );
+    RandomU64() noexcept 
+    {
+        uint64_t value {};
+    
+        try {
+            static thread_local std::random_device rd;
+            value = rd();
+        } catch (...) {
+            value = static_cast<uint64_t>( 
+                std::chrono::steady_clock::now()
+                    .time_since_epoch()
+                    .count()
+            );
+        }
+        
+        seed( value );
     }
 
-    constexpr uint64_t operator()() { 
+    constexpr uint64_t operator()() noexcept { 
         return next(); 
     }
 
-    constexpr void seed( const uint64_t k ) 
+    constexpr void seed( const uint64_t k ) noexcept
     {
         uint64_t sm = k;
 
@@ -82,7 +95,7 @@ struct RandomU64
         }
     }
 
-    constexpr uint64_t next() 
+    constexpr uint64_t next() noexcept
     {
         const uint64_t result = rotl( s[0] + s[3], 23 ) + s[0];
         const uint64_t t = s[1] << 17;
@@ -103,14 +116,14 @@ struct RandomU64
 
         uint64_t s[4];
 
-        static constexpr uint64_t splitmix64( uint64_t& x ) {
+        static constexpr uint64_t splitmix64( uint64_t& x ) noexcept {
             uint64_t z = ( x += 0x9e3779b97f4a7c15ULL );
             z = ( z ^ ( z >> 30 ) ) * 0xbf58476d1ce4e5b9ULL;
             z = ( z ^ ( z >> 27 ) ) * 0x94d049bb133111ebULL;
             return z ^ ( z >> 31 );
         }
 
-        static constexpr uint64_t rotl( const uint64_t x, int k ) {
+        static constexpr uint64_t rotl( const uint64_t x, int k ) noexcept {
             return ( x << k ) | ( x >> ( 64 - k ) );
         }
 };
