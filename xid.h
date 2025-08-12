@@ -155,9 +155,9 @@ constexpr void encode_to( const uint64_t value, char* buffer )
 }
 
 
-[[nodiscard]] inline bool is_valid( std::string_view sv ) noexcept
+[[nodiscard]] constexpr bool is_valid( std::string_view sv ) noexcept
 {
-    if ( sv.empty() || sv.size() > 11 ) {
+    if ( sv.size() > 11 ) {
         return false;
     }
 
@@ -210,47 +210,24 @@ constexpr void encode_to( const uint64_t value, char* buffer )
 struct Uuid11 
 {
     static inline thread_local RandomU64 randu64;  
-
     uint64_t bytes;
-
-    constexpr Uuid11() {
+    
+    constexpr Uuid11( const uint64_t bytes__ ) noexcept : 
+    bytes( bytes__ ) 
+    {}
+    
+    constexpr Uuid11() noexcept {
         bytes = randu64();
     }
     
-    constexpr std::string to_string() const 
-    {
-        std::string s( length, alphabet[ 0 ] );
-        uint64_t v = bytes;
-        
-        for( int i = length - 1; i >= 0; --i ) {
-            s[ i ] = alphabet[ v % base ];
-            v /= base;
-        }
-
-        return s;
+    constexpr std::string to_string() const {
+        return encode( bytes );
     }
 
-    static constexpr std::optional<Uuid11> from_string( std::string_view str ) 
-    {       
-        Uuid11 result;
-        result.bytes = 0;
-        
-        for ( const char c : str ) 
-        {
-            const size_t pos = alphabet.find( c );
-
-            if ( pos == std::string_view::npos ) {
-                return std::nullopt;
-            }
-            
-            result.bytes = result.bytes * base + pos;
-        }
-
-        for ( int i = 0; i < length - str.size(); i++ ) {
-            result.bytes = result.bytes * base;
-        }
-        
-        return result;
+    static constexpr std::optional<Uuid11> from_string( std::string_view str ) {       
+        return decode( str ).transform( []( const uint64_t val ) {
+            return Uuid11( val );
+        });
     }
 };
 
