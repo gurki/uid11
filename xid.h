@@ -9,6 +9,9 @@
 
 namespace xid {
 
+    
+static constexpr std::string_view max_u64_b58 = "jpXCZedGfVQ";
+
 
 ////////////////////////////////////////////////////////////////////////////////
 //  base58 (bitcoin alphabet)
@@ -130,18 +133,82 @@ struct RandomU64
 
 
 ////////////////////////////////////////////////////////////////////////////////
+//  encode / decode
+////////////////////////////////////////////////////////////////////////////////
+
+constexpr void encode_to( const uint64_t value, char* buffer ) 
+{
+    std::fill( buffer, buffer + 11, alphabet.front() );
+    uint64_t v = value;
+    
+    for( int i = length - 1; i >= 0; --i ) {
+        buffer[ i ] = alphabet[ v % base ];
+        v /= base;
+    }
+}
+
+
+[[nodiscard]] constexpr std::string encode( const uint64_t value ) {
+    std::string s( length, 0 );
+    encode_to( value, s.data() );
+    return s;
+}
+
+
+[[nodiscard]] inline bool is_valid( std::string_view sv ) noexcept
+{
+    if ( sv.empty() || sv.size() > 11 ) {
+        return false;
+    }
+
+    for ( auto c : sv ) {
+        if ( c >= 128 || index[ c ] == 0xff ) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+
+[[nodiscard]] constexpr std::optional<uint64_t> decode( std::string_view str ) 
+{       
+    if ( ! is_valid( str ) ) {
+        return std::nullopt;
+    }
+
+    uint64_t acc {};
+
+    for ( const char c : str ) 
+    {
+        const uint8_t pos = index.at( c );
+
+        if ( acc > ( std::numeric_limits<uint64_t>::max() - pos ) / base ) {
+            //  doesn't fit in 64 bits
+            return std::nullopt; 
+        }
+        
+        acc = acc * base + static_cast<uint64_t>( pos );
+    }
+
+    for ( int i = 0; i < length - str.size(); i++ ) {
+        acc = acc * base;
+    }
+    
+    return acc;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
 /*
-    64 bit url-safe uuid
-    requires at most `log( 2^64 ) / log( 58 ) = 10.925` symbols -> 11 characters uuid11
+    64 bit url-safe uid
+    requires at most `log( 2^64 ) / log( 58 ) = 10.925` symbols -> 11 characters uid11
     base64 would only have `log( 2^64 ) / log( 64 ) = 10.666` symbols, i.e. still need 11 characters with only downsides
-    maybe name it "Xi" with 'Îž' or 'Î¾' because it's roman numeral XI
+    maybe name it "Xi" with 'Ξ' or 'ξ' because it's roman numeral XI
+    or xid as combination of xi and id
 */
 struct Uuid11 
 {
-    //  base58
-    // static constexpr auto length = std::ceil( std::log( 2^ 64 ) / std::log( 58 ) );
-    static constexpr std::string_view max = "jpXCZedGfVQ";
-
     static inline thread_local RandomU64 randu64;  
 
     uint64_t bytes;
