@@ -6,20 +6,14 @@
 #include <optional>
 #include <array>
 
-
 namespace xid {
-
-    
-static constexpr std::string_view max_u64_b58 = "jpXCZedGfVQ";
 
 
 ////////////////////////////////////////////////////////////////////////////////
 //  base58 (bitcoin alphabet)
 ////////////////////////////////////////////////////////////////////////////////
 
-static constexpr std::string_view alphabet = 
-    "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-
+static constexpr std::string_view alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 static constexpr uint8_t base = alphabet.size();
 static constexpr uint8_t length = 11;
 
@@ -55,12 +49,12 @@ constexpr std::uint64_t mask_n( std::size_t bits ) {
 
 
 ////////////////////////////////////////////////////////////////////////////////
-/*
-    xoshiro256++
-    Written in 2019 by David Blackman and Sebastiano Vigna (vigna@acm.org)
-    [1] https://prng.di.unimi.it/
-    [2] https://prng.di.unimi.it/xoshiro256plusplus.c
-*/
+//  xoshiro256++
+//    written in 2019 by David Blackman and Sebastiano Vigna (vigna@acm.org)
+//    [1] https://prng.di.unimi.it/
+//    [2] https://prng.di.unimi.it/xoshiro256plusplus.c
+////////////////////////////////////////////////////////////////////////////////
+
 struct RandomU64 
 {    
     RandomU64() noexcept 
@@ -107,9 +101,7 @@ struct RandomU64
         s[3] ^= s[1];
         s[1] ^= s[2];
         s[0] ^= s[3];
-
         s[2] ^= t;
-
         s[3] = rotl( s[3], 45 );
 
         return result;
@@ -200,141 +192,82 @@ constexpr void encode_to( const uint64_t value, char* buffer )
 
 
 ////////////////////////////////////////////////////////////////////////////////
-/*
-    64 bit url-safe uid
-    requires at most `log( 2^64 ) / log( 58 ) = 10.925` symbols -> 11 characters uid11
-    base64 would only have `log( 2^64 ) / log( 64 ) = 10.666` symbols, i.e. still need 11 characters with only downsides
-    maybe name it "Xi" with 'Ξ' or 'ξ' because it's roman numeral XI
-    or xid as combination of xi and id
-*/
-struct Uuid11 
+//  64 bit url-safe uid
+////////////////////////////////////////////////////////////////////////////////
+
+static constexpr std::string_view max_u64_b58 = "jpXCZedGfVQ";
+
+struct Uid11
 {
-    static inline thread_local RandomU64 randu64;  
-    uint64_t bytes;
+    uint64_t bytes {};
     
-    constexpr Uuid11( const uint64_t bytes__ ) noexcept : 
-    bytes( bytes__ ) 
+    constexpr Uid11() noexcept {};
+
+    constexpr Uid11( const uint64_t bytes__ ) noexcept : 
+        bytes( bytes__ ) 
     {}
-    
-    constexpr Uuid11() noexcept {
-        bytes = randu64();
-    }
+
+    constexpr Uid11( const Uid11& other ) noexcept = default;
     
     constexpr std::string to_string() const {
         return encode( bytes );
     }
 
-    static constexpr std::optional<Uuid11> from_string( std::string_view str ) {       
-        return decode( str ).transform( []( const uint64_t val ) {
-            return Uuid11( val );
-        });
+    static constexpr std::optional<Uid11> from_string( std::string_view str ) {       
+        return decode( str );
     }
 };
 
 
 ////////////////////////////////////////////////////////////////////////////////
-/*
-    time & random
-    44 bit milliseconds since epoch | 20 bit randomness
-    45 bit rolls over 3084-12-12T12:41:28.831Z
-    44 bit rolls over 2527-06-23T06:20:44.415Z
-    43 bit rolls over 2248-09-26T15:10:22.207Z
-    42 bit rolls over 2109-05-15T07:35:11.103Z
-    41 bit rolls over 2039-09-07T15:47:35.551Z
-*/
-struct Uuid11TR : public Uuid11 
+//  random
+//    64 bit randomness
+////////////////////////////////////////////////////////////////////////////////
+
+struct XidR : public Uid11
 {
-    inline static auto epoch = std::chrono::system_clock::time_point();
+    static inline thread_local RandomU64 rand_u64;  
 
-    Uuid11TR() 
-    {
-        const auto now = std::chrono::system_clock::now();
-        const auto millis = std::chrono::duration_cast<std::chrono::milliseconds>( now.time_since_epoch() ).count();
-        const uint64_t timeBits = static_cast<uint64_t>( millis );
-        const uint64_t randomBits = randu64() & mask_n( 20 );
-        bytes = ( timeBits << 20 ) | randomBits;
-    }
+    constexpr XidR() noexcept :
+        Uid11( rand_u64() )
+    {}
 
-    Uuid11TR( const Uuid11& other ) {
-        bytes = other.bytes;
-    }
-    
-    auto timestamp() const {
-        return epoch + std::chrono::milliseconds( bytes >> 20 );
-    }
+    constexpr XidR( const uint64_t bytes ) noexcept : 
+        Uid11( bytes ) 
+    {}
 };
 
 
 ////////////////////////////////////////////////////////////////////////////////
-/*
-    time & sequence
-    44 bit milliseconds since epoch | 24 bit sequence
-    rolls over 2527-06-23T06:20:44.415Z
-*/
-struct Uuid11TS : public Uuid11 
-{
-    inline static auto epoch = std::chrono::system_clock::time_point();
-
-    uint16_t seq = 0;
-    uint64_t lastMs = 0;
-
-    Uuid11TS() 
-    {
-        const auto now = std::chrono::system_clock::now();
-        const auto millis = std::chrono::duration_cast<std::chrono::milliseconds>( now.time_since_epoch() ).count();
-        const uint64_t timeBits = static_cast<uint64_t>( millis );
-        
-        if ( timeBits != lastMs ) {
-            seq = 0;
-            lastMs = timeBits;
-        }
-        
-        bytes = ( timeBits << 20 ) | seq;
-        seq++;
-    }
-
-    Uuid11TS( const Uuid11& other ) {
-        bytes = other.bytes;
-    }
-    
-    auto timestamp() const {
-        return epoch + std::chrono::milliseconds( bytes >> 20 );
-    }
-};
-
-
+//  time & random
+//    42 bit milliseconds since xid epoch | 22 bit randomness
+//    rolls over 2109-05-15T07:35:11.103Z from unix epoch
+//    rolls over 2151-05-18T09:31:07.215Z from xid epoch
+//    xid epoch: 1321009871111 ms
 ////////////////////////////////////////////////////////////////////////////////
-/*
-    twitter snowflake id
-    0 sign bit | 41 bit milliseconds since 1288834974657 unix time ms | 10 bit machine | 12 bit sequence
-    rolls over 2080-07-10T17:30:30.208Z
-*/
-struct Uuid11SF : public Uuid11 
+
+uint64_t time_since_epoch_ms() noexcept {
+    const auto now = std::chrono::system_clock::now();
+    const auto millis = std::chrono::duration_cast<std::chrono::milliseconds>( now.time_since_epoch() ).count();
+    return static_cast<uint64_t>( millis );
+}
+
+
+struct XidTR : public Uid11 
 {
-    inline static auto epoch = std::chrono::system_clock::time_point( std::chrono::milliseconds( 1288834974657 ) );
+    static constexpr uint8_t time_bits = 22;
+    static constexpr auto epoch = std::chrono::system_clock::time_point( std::chrono::milliseconds( 1321009871111 ) );
+    static inline thread_local RandomU64 rand_u64;
 
-    uint16_t mid = 0;
-    uint16_t seq = 0;
-    uint64_t lastMs = 0;
-
-    Uuid11SF( const uint16_t mid ) 
-    {
-        const auto now = std::chrono::system_clock::now();
-        const auto millis = std::chrono::duration_cast<std::chrono::milliseconds>( now.time_since_epoch() ).count();
-        const uint64_t timeBits = static_cast<uint64_t>( millis );
-        
-        if ( timeBits != lastMs ) {
-            seq = 0;
-            lastMs = timeBits;
-        }
-        
-        bytes = ( ( timeBits << 23 ) >> 1 ) | ( mid << 12 ) | seq;
-        seq++;
+    XidTR() noexcept {
+        const uint64_t timeBits = time_since_epoch_ms() << 22;
+        const uint64_t randomBits = rand_u64() & mask_n( 22 );
+        bytes = timeBits | randomBits;
     }
 
-    Uuid11SF( const Uuid11& other ) {
-        bytes = other.bytes;
-    }
+    constexpr XidTR( const uint64_t bytes ) noexcept : 
+        Uid11( bytes ) 
+    {}
     
     auto timestamp() const {
         return epoch + std::chrono::milliseconds( bytes >> 22 );
