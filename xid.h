@@ -17,7 +17,7 @@ static constexpr std::string_view alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZa
 static constexpr uint8_t base = alphabet.size();
 static constexpr uint8_t length = 11;
 
-static constexpr std::array<uint8_t, 128> make_index() 
+static constexpr std::array<uint8_t, 128> make_index()
 {
     std::array<uint8_t, 128> m {};
     m.fill( 0xff );
@@ -43,8 +43,15 @@ static constexpr auto index = make_index();
 //  helper
 ////////////////////////////////////////////////////////////////////////////////
 
-constexpr std::uint64_t mask_n( std::size_t bits ) {
+constexpr std::uint64_t mask_n( std::size_t bits ) noexcept {
     return bits >= 64 ? ~0ull : ( bits == 0 ? 0ull : ( ( 1ull << bits ) - 1ull ) );
+}
+
+
+uint64_t time_since_epoch_ms() noexcept {
+    const auto now = std::chrono::system_clock::now();
+    const auto millis = std::chrono::duration_cast<std::chrono::milliseconds>( now.time_since_epoch() ).count();
+    return static_cast<uint64_t>( millis );
 }
 
 
@@ -245,12 +252,6 @@ struct XidR : public Uid11
 //    rolls over 2151-05-18T09:31:07.215Z from xid epoch
 //    xid epoch: 1321009871111 ms
 ////////////////////////////////////////////////////////////////////////////////
-
-uint64_t time_since_epoch_ms() noexcept {
-    const auto now = std::chrono::system_clock::now();
-    const auto millis = std::chrono::duration_cast<std::chrono::milliseconds>( now.time_since_epoch() ).count();
-    return static_cast<uint64_t>( millis );
-}
 
 
 struct XidTR : public Uid11 
