@@ -1,11 +1,11 @@
-# xid Ξ
-flexible, url-safe, single-header 64bit UID in 11 characters
+# uid11 ⋅ xid Ξ
+ergonomic, url-safe, single-header 64bit uid in 11 characters
 
 
 ## Format
 
 ### Why 64 bit?
-Assume we encode millisecond resolution timestamps with each UID.
+Assume we encode millisecond resolution timestamps with each uid.
 Due to the birthday paradox, generating just a couple thousand items per millisecond would already result in a 50% chance of collisions.
 Twitter had an average of [5700 TPS](https://blog.x.com/engineering/en_us/a/2013/new-tweets-per-second-record-and-how) back in 2013.
 UUIDs with 128 bit were introduced to allow basically collision free _universally_ unique ids across distributed systems.
@@ -86,7 +86,8 @@ This also leaves the 22 bits for randomness or machine / sequence fields, simila
 > `42 bit` millisecond resolution timestamp lasts us easily over 100 years, forming a practical sweetspot.
 
 ### Why `xid`?
-> The name is a combination of the roman numeral `XI` for the number eleven, and `ID` for the unique identifier.
+
+> The name is a combination of the roman numeral `XI` for the number eleven, and `ID` for unique identifier.
 
 ### Why the Custom Epoch?
 We don't expect the timestamp to be used much in retrospect, especially for large-scale modern-tech systems.
@@ -144,5 +145,7 @@ at single time point
 5Gg7ttok3LG -> 2025-08-05T18:32:27.225
 ```
 
+
 ## Acknowledgements
 - David Blackman and Sebastiano Vigna for their work on [fast PRNGs](https://prng.di.unimi.it/)
+- Ex-Twitter team and their fantastic engineering [blog posts](https://blog.x.com/engineering/en_us/a/2010/announcing-snowflake)
