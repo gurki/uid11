@@ -5,6 +5,7 @@
 #include <print>
 #include <optional>
 #include <array>
+#include <format>
 
 namespace uid11 {
 
@@ -139,7 +140,7 @@ uint64_t time_since_unix_epoch_ms() noexcept {
 //  encode / decode
 ////////////////////////////////////////////////////////////////////////////////
 
-constexpr void encode_to( const uint64_t payload, char* buffer ) 
+constexpr void encode_to( const uint64_t payload, char* buffer ) noexcept
 {
     std::fill( buffer, buffer + 11, alphabet.front() );
     uint64_t v = payload;
@@ -241,6 +242,10 @@ constexpr uint64_t random() noexcept {
     return rand_u64();
 };
 
+std::string random_string() noexcept {
+    return encode( rand_u64() );
+};
+
 
 ////////////////////////////////////////////////////////////////////////////////
 //  time & random
@@ -260,10 +265,12 @@ constexpr auto timepoint( const uint64_t payload ) noexcept {
     return std::chrono::floor<std::chrono::milliseconds>( tp );
 }
 
+
 auto timestamp( const uint64_t payload ) {
     const auto tp = timepoint( payload );
     return std::format( "{:%FT%T}Z", tp );
 }
+
 
 uint64_t xid() noexcept {
     const uint64_t timeBits = ( time_since_unix_epoch_ms() - epoch_ms ) << ( random_bits );
@@ -272,7 +279,12 @@ uint64_t xid() noexcept {
 };
 
 
-constexpr uint64_t encode_xid( const uint64_t timeSinceUnixEpoch_ms, const uint64_t random ) noexcept {
+std::string xid_string() noexcept {
+    return encode( xid() );
+};
+
+
+constexpr uint64_t pack( const uint64_t timeSinceUnixEpoch_ms, const uint64_t random ) noexcept {
     const uint64_t timeBits = ( timeSinceUnixEpoch_ms - epoch_ms ) << ( random_bits );
     const uint64_t randomBits = random & mask_n( random_bits );
     return timeBits | randomBits;
