@@ -6,6 +6,7 @@
 #include <optional>
 #include <array>
 #include <format>
+#include <ranges>
 
 namespace uid11 {
 
@@ -22,26 +23,36 @@ static constexpr std::string_view alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZa
 static constexpr uint8_t base = alphabet.size();
 static constexpr uint8_t length = 11;
 
-static constexpr std::array<uint8_t, 128> make_index()
+static constexpr std::array<uint8_t, 256> make_index()
 {
-    std::array<uint8_t, 128> m {};
+    std::array<uint8_t, 256> m {};
     m.fill( 0xff );
             
-    for ( int i = 0; i < alphabet.size(); ++i ) 
-    {
-        uint8_t c = static_cast<uint8_t>( alphabet[ i ] );
-
-        if ( c >= m.size() ) {
-            continue;
-        }
-
-        m[ c ] = static_cast<uint8_t>( i );
+    for ( uint8_t i = 0; i < alphabet.size(); ++i ) {
+        auto c = static_cast<uint8_t>( alphabet[ i ] );
+        m[ c ] = i;
     }
 
     return m;
 }
 
 static constexpr auto index = make_index();
+
+
+////////////////////////////////////////////////////////////////////////////////
+//  helper
+////////////////////////////////////////////////////////////////////////////////
+
+constexpr std::uint64_t mask_n( std::size_t bits ) noexcept {
+    return bits >= 64 ? ~0ull : ( bits == 0 ? 0ull : ( ( 1ull << bits ) - 1ull ) );
+}
+
+
+uint64_t time_since_unix_epoch_ms() noexcept {
+    const auto now = std::chrono::system_clock::now();
+    const auto millis = std::chrono::duration_cast<std::chrono::milliseconds>( now.time_since_epoch() ).count();
+    return static_cast<uint64_t>( millis );
+}
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -61,11 +72,7 @@ struct xoshiro256pp
             static thread_local std::random_device rd;
             value = rd();
         } catch (...) {
-            value = static_cast<uint64_t>( 
-                std::chrono::steady_clock::now()
-                    .time_since_epoch()
-                    .count()
-            );
+            value = time_since_unix_epoch_ms();
         }
         
         seed( value );
@@ -121,28 +128,12 @@ struct xoshiro256pp
 
 
 ////////////////////////////////////////////////////////////////////////////////
-//  helper
-////////////////////////////////////////////////////////////////////////////////
-
-constexpr std::uint64_t mask_n( std::size_t bits ) noexcept {
-    return bits >= 64 ? ~0ull : ( bits == 0 ? 0ull : ( ( 1ull << bits ) - 1ull ) );
-}
-
-
-uint64_t time_since_unix_epoch_ms() noexcept {
-    const auto now = std::chrono::system_clock::now();
-    const auto millis = std::chrono::duration_cast<std::chrono::milliseconds>( now.time_since_epoch() ).count();
-    return static_cast<uint64_t>( millis );
-}
-
-
-////////////////////////////////////////////////////////////////////////////////
 //  encode / decode
 ////////////////////////////////////////////////////////////////////////////////
 
 constexpr void encode_to( const uint64_t payload, char* buffer ) noexcept
 {
-    std::fill( buffer, buffer + 11, alphabet.front() );
+    std::ranges::fill( buffer, buffer + 11, alphabet.front() );
     uint64_t v = payload;
     
     for( int i = length - 1; i >= 0; --i ) {
@@ -165,13 +156,9 @@ constexpr void encode_to( const uint64_t payload, char* buffer ) noexcept
         return false;
     }
 
-    for ( auto c : sv ) {
-        if ( c >= 128 || index[ c ] == 0xff ) {
-            return false;
-        }
-    }
-
-    return true;
+    return std::ranges::none_of( sv, []( char c ) {
+        return index[ c ] == 0xff;
+    });
 }
 
 
@@ -222,10 +209,7 @@ constexpr void encode_to( const uint64_t payload, char* buffer ) noexcept
     }
 
     return unpack( str ).transform( [ str ]( uint64_t acc ) {
-        for ( int i = 0; i < length - str.size(); i++ ) {
-            acc = acc * base;
-        }
-        return acc;
+        return acc * std::pow( base, length - str.size() );
     });
 }
 
@@ -240,11 +224,11 @@ static inline thread_local xoshiro256pp rand_u64;
 
 constexpr uint64_t random() noexcept {
     return rand_u64();
-};
+}
 
 std::string random_string() noexcept {
     return encode( rand_u64() );
-};
+}
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -276,19 +260,19 @@ uint64_t xid() noexcept {
     const uint64_t timeBits = ( time_since_unix_epoch_ms() - epoch_ms ) << ( random_bits );
     const uint64_t randomBits = rand_u64() & mask_n( random_bits );
     return timeBits | randomBits;
-};
+}
 
 
 std::string xid_string() noexcept {
     return encode( xid() );
-};
+}
 
 
 constexpr uint64_t pack( const uint64_t timeSinceUnixEpoch_ms, const uint64_t random ) noexcept {
     const uint64_t timeBits = ( timeSinceUnixEpoch_ms - epoch_ms ) << ( random_bits );
     const uint64_t randomBits = random & mask_n( random_bits );
     return timeBits | randomBits;
-};
+}
 
 
 }   //  ::uid11
