@@ -9,6 +9,7 @@
 namespace uid11 {
 
 
+static constexpr std::string_view min_u64_b58 = "11111111111";
 static constexpr std::string_view max_u64_b58 = "jpXCZedGfVQ";
 
 
@@ -49,9 +50,9 @@ static constexpr auto index = make_index();
 //    [2] https://prng.di.unimi.it/xoshiro256plusplus.c
 ////////////////////////////////////////////////////////////////////////////////
 
-struct RandomU64 
+struct xoshiro256pp 
 {    
-    RandomU64() noexcept 
+    xoshiro256pp() noexcept 
     {
         uint64_t value {};
     
@@ -132,8 +133,6 @@ uint64_t time_since_unix_epoch_ms() noexcept {
     const auto millis = std::chrono::duration_cast<std::chrono::milliseconds>( now.time_since_epoch() ).count();
     return static_cast<uint64_t>( millis );
 }
-
-static inline thread_local RandomU64 rand_u64;  
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -235,6 +234,7 @@ constexpr void encode_to( const uint64_t payload, char* buffer )
 //    64 bit randomness
 ////////////////////////////////////////////////////////////////////////////////
 
+static inline thread_local xoshiro256pp rand_u64;  
 
 
 constexpr uint64_t random() noexcept {
@@ -252,8 +252,8 @@ constexpr uint64_t random() noexcept {
 
 static constexpr uint8_t time_bits = 44;
 static constexpr uint8_t random_bits = 64 - time_bits;
-static constexpr auto epochMs = 1321009871111;
-static constexpr auto epoch = std::chrono::system_clock::time_point( std::chrono::milliseconds( epochMs ) );
+static constexpr auto epoch_ms = 1321009871111;
+static constexpr auto epoch = std::chrono::system_clock::time_point( std::chrono::milliseconds( epoch_ms ) );
 
 constexpr auto timepoint( const uint64_t payload ) noexcept {
     const auto tp = epoch + std::chrono::milliseconds( payload >> random_bits );
@@ -266,14 +266,14 @@ auto timestamp( const uint64_t payload ) {
 }
 
 uint64_t xid() noexcept {
-    const uint64_t timeBits = ( time_since_unix_epoch_ms() - epochMs ) << ( random_bits );
+    const uint64_t timeBits = ( time_since_unix_epoch_ms() - epoch_ms ) << ( random_bits );
     const uint64_t randomBits = rand_u64() & mask_n( random_bits );
     return timeBits | randomBits;
 };
 
 
-constexpr uint64_t encode_xid( const uint64_t timeSinceUnixEpochMs, const uint64_t random ) noexcept {
-    const uint64_t timeBits = ( timeSinceUnixEpochMs - epochMs ) << ( random_bits );
+constexpr uint64_t encode_xid( const uint64_t timeSinceUnixEpoch_ms, const uint64_t random ) noexcept {
+    const uint64_t timeBits = ( timeSinceUnixEpoch_ms - epoch_ms ) << ( random_bits );
     const uint64_t randomBits = random & mask_n( random_bits );
     return timeBits | randomBits;
 };
