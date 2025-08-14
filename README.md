@@ -1,5 +1,5 @@
 # uid11 ⋅ xid Ξ
-ergonomic, url-safe, single-header 64bit uid in 11 characters
+ergonomic 64bit uid in 11 characters
 
 
 ## Format
