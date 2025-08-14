@@ -2,6 +2,9 @@
 .vscode/
 .vs/
 .jj/
+.install
+out/
+build/
 
 # Prerequisites
 *.d
