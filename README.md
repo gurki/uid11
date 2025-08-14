@@ -86,7 +86,7 @@ This also leaves the 22 bits for randomness or machine / sequence fields, simila
 > `42 bit` millisecond resolution timestamp lasts us easily over 100 years, forming a practical sweetspot.
 
 ### Why `xid`?
-The name is 
+> The name is a combination of the roman numeral `XI` for the number eleven, and `ID` for the unique identifier.
 
 ### Why the Custom Epoch?
 We don't expect the timestamp to be used much in retrospect, especially for large-scale modern-tech systems.
