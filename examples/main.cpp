@@ -1,4 +1,4 @@
-#include <xid.h>
+#include <uid11.h>
 
 #include <print>
 #include <thread>
@@ -9,36 +9,36 @@ int main()
 {
     //  random
     for ( int i = 0; i < 11; i++ ) {
-        xid::XidR now;
-        std::println( "{}", now.to_string() );
+        uint64_t now = uid11::random();
+        std::println( "{}", uid11::encode( now ) );
     }
 
     //  time & random in 10ms intervals
     for ( int i = 0; i < 11; i++ ) {
-        xid::XidTR nowseq;
-        xid::XidTR nsrt { xid::Uid11::from_string( nowseq.to_string() ).value().bytes };
-        std::println( "{}, {:064b}, {}, {}", nowseq.to_string(), nowseq.bytes, nowseq.timestamp(), nsrt.timestamp() );
+        uint64_t nowseq = uid11::xid();
+        uint64_t nsrt { uid11::decode( uid11::encode( nowseq ) ).value() };
+        std::println( "{}, {:064b}, {}, {}", uid11::encode( nowseq ), nowseq, uid11::timestamp( nowseq ), uid11::timestamp( nsrt ) );
         std::this_thread::sleep_for( std::chrono::milliseconds( 10 ) );
     }
 
-    //  time & random 
-    std::array<xid::XidTR, 11> nows {};
+    //  time & random
+    std::array<uint64_t, 11> nows;
+    std::ranges::generate( nows, &uid11::xid );
 
-    for ( const auto& now: nows ) {
-        std::println( "{} -> {}", now.to_string(), now.timestamp() );
+    for ( const auto& now : nows ) {
+        std::println( "{} -> {}", uid11::encode( now ), uid11::timestamp( now ) );
     }
 
     //  max possible
-    xid::XidTR max;
-    max.bytes = UINT64_MAX;
-    std::println( "max: {} -> {}", max.to_string(), max.timestamp() );
+    uint64_t max = UINT64_MAX;
+    std::println( "max: {} -> {}", uid11::encode( max ), uid11::timestamp( max ) );
 
     //  streaming uid
+    const std::string_view enc = "24HZMr9t1qX";
     
-    const std::string_view enc = "5Gg7kK8XiNh";
     for ( int i = 0; i <= 11; i++ ) {
-        xid::XidTR uid { xid::Uid11::from_string( enc.substr( 0, i ) ).value().bytes };
-        std::println( "{}: {} -> {}", i, uid.to_string(), uid.timestamp() );
+        uint64_t uid { uid11::decode_partial( enc.substr( 0, i ) ).value() };
+        std::println( "{}: {} -> {}", i, uid11::encode( uid ), uid11::timestamp( uid ) );
     }
     
     return EXIT_SUCCESS;

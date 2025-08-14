@@ -1,7 +1,21 @@
 # xid Ξ
 flexible, url-safe, single-header 64bit uid in 11 characters
 
-## Random 🎲
+
+## Format
+
+### Why 64 bit?
+Assume we encode millisecond resolution timestamps with each uid.
+Due to the birthday paradox, generating just a couple thousand items per millisecond would already result in a 50% chance of collisions.
+Twitter had an average of 5700 TPS back in 2013[^1].\
+UUIDs with 128 bit were introduced to allow basically collision free 
+
+[^1]: [](https://blog.x.com/engineering/en_us/a/2013/new-tweets-per-second-record-and-how)
+
+
+## Examples
+
+### Random 🎲
 ```
 75mc2sQdSji
 AiD2n4c2d9p
@@ -16,7 +30,7 @@ iYsvKPYXFo7
 1Ag98BdKNx7
 ```
 
-## Time & Random ⌚🎲
+### Time & Random ⌚🎲
 over sequential time points
 ```
 5Gg7kK8XiNh -> 2025-08-05T18:27:15.704

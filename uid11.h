@@ -6,7 +6,10 @@
 #include <optional>
 #include <array>
 
-namespace xid {
+namespace uid11 {
+
+
+static constexpr std::string_view max_u64_b58 = "jpXCZedGfVQ";
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -37,22 +40,6 @@ static constexpr std::array<uint8_t, 128> make_index()
 }
 
 static constexpr auto index = make_index();
-
-
-////////////////////////////////////////////////////////////////////////////////
-//  helper
-////////////////////////////////////////////////////////////////////////////////
-
-constexpr std::uint64_t mask_n( std::size_t bits ) noexcept {
-    return bits >= 64 ? ~0ull : ( bits == 0 ? 0ull : ( ( 1ull << bits ) - 1ull ) );
-}
-
-
-uint64_t time_since_epoch_ms() noexcept {
-    const auto now = std::chrono::system_clock::now();
-    const auto millis = std::chrono::duration_cast<std::chrono::milliseconds>( now.time_since_epoch() ).count();
-    return static_cast<uint64_t>( millis );
-}
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -132,13 +119,31 @@ struct RandomU64
 
 
 ////////////////////////////////////////////////////////////////////////////////
+//  helper
+////////////////////////////////////////////////////////////////////////////////
+
+constexpr std::uint64_t mask_n( std::size_t bits ) noexcept {
+    return bits >= 64 ? ~0ull : ( bits == 0 ? 0ull : ( ( 1ull << bits ) - 1ull ) );
+}
+
+
+uint64_t time_since_unix_epoch_ms() noexcept {
+    const auto now = std::chrono::system_clock::now();
+    const auto millis = std::chrono::duration_cast<std::chrono::milliseconds>( now.time_since_epoch() ).count();
+    return static_cast<uint64_t>( millis );
+}
+
+static inline thread_local RandomU64 rand_u64;  
+
+
+////////////////////////////////////////////////////////////////////////////////
 //  encode / decode
 ////////////////////////////////////////////////////////////////////////////////
 
-constexpr void encode_to( const uint64_t value, char* buffer ) 
+constexpr void encode_to( const uint64_t payload, char* buffer ) 
 {
     std::fill( buffer, buffer + 11, alphabet.front() );
-    uint64_t v = value;
+    uint64_t v = payload;
     
     for( int i = length - 1; i >= 0; --i ) {
         buffer[ i ] = alphabet[ v % base ];
@@ -147,14 +152,14 @@ constexpr void encode_to( const uint64_t value, char* buffer )
 }
 
 
-[[nodiscard]] constexpr std::string encode( const uint64_t value ) {
+[[nodiscard]] constexpr std::string encode( const uint64_t payload ) {
     std::string s( length, 0 );
-    encode_to( value, s.data() );
+    encode_to( payload, s.data() );
     return s;
 }
 
 
-[[nodiscard]] constexpr bool is_valid( std::string_view sv ) noexcept
+[[nodiscard]] constexpr bool is_valid_partial( std::string_view sv ) noexcept
 {
     if ( sv.size() > 11 ) {
         return false;
@@ -170,12 +175,18 @@ constexpr void encode_to( const uint64_t value, char* buffer )
 }
 
 
-[[nodiscard]] constexpr std::optional<uint64_t> decode( std::string_view str ) 
-{       
-    if ( ! is_valid( str ) ) {
-        return std::nullopt;
+[[nodiscard]] constexpr bool is_valid( std::string_view sv ) noexcept
+{
+    if ( sv.size() != 11 ) {
+        return false;
     }
 
+    return is_valid_partial( sv );
+}
+
+
+[[nodiscard]] constexpr std::optional<uint64_t> unpack( std::string_view str ) 
+{
     uint64_t acc {};
 
     for ( const char c : str ) 
@@ -190,40 +201,33 @@ constexpr void encode_to( const uint64_t value, char* buffer )
         acc = acc * base + static_cast<uint64_t>( pos );
     }
 
-    for ( int i = 0; i < length - str.size(); i++ ) {
-        acc = acc * base;
-    }
-    
     return acc;
 }
 
 
-////////////////////////////////////////////////////////////////////////////////
-//  64 bit url-safe uid
-////////////////////////////////////////////////////////////////////////////////
-
-static constexpr std::string_view max_u64_b58 = "jpXCZedGfVQ";
-
-struct Uid11
-{
-    uint64_t bytes {};
-    
-    constexpr Uid11() noexcept {};
-
-    constexpr Uid11( const uint64_t bytes__ ) noexcept : 
-        bytes( bytes__ ) 
-    {}
-
-    constexpr Uid11( const Uid11& other ) noexcept = default;
-    
-    constexpr std::string to_string() const {
-        return encode( bytes );
+[[nodiscard]] constexpr std::optional<uint64_t> decode( std::string_view str ) 
+{       
+    if ( ! is_valid( str ) ) {
+        return std::nullopt;
     }
 
-    static constexpr std::optional<Uid11> from_string( std::string_view str ) {       
-        return decode( str );
+    return unpack( str );
+}
+
+
+[[nodiscard]] constexpr std::optional<uint64_t> decode_partial( std::string_view str ) 
+{       
+    if ( ! is_valid_partial( str ) ) {
+        return std::nullopt;
     }
-};
+
+    return unpack( str ).transform( [ str ]( uint64_t acc ) {
+        for ( int i = 0; i < length - str.size(); i++ ) {
+            acc = acc * base;
+        }
+        return acc;
+    });
+}
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -231,17 +235,10 @@ struct Uid11
 //    64 bit randomness
 ////////////////////////////////////////////////////////////////////////////////
 
-struct XidR : public Uid11
-{
-    static inline thread_local RandomU64 rand_u64;  
 
-    constexpr XidR() noexcept :
-        Uid11( rand_u64() )
-    {}
 
-    constexpr XidR( const uint64_t bytes ) noexcept : 
-        Uid11( bytes ) 
-    {}
+constexpr uint64_t random() noexcept {
+    return rand_u64();
 };
 
 
@@ -253,27 +250,33 @@ struct XidR : public Uid11
 //    xid epoch: 1321009871111 ms
 ////////////////////////////////////////////////////////////////////////////////
 
+static constexpr uint8_t time_bits = 44;
+static constexpr uint8_t random_bits = 64 - time_bits;
+static constexpr auto epochMs = 1321009871111;
+static constexpr auto epoch = std::chrono::system_clock::time_point( std::chrono::milliseconds( epochMs ) );
 
-struct XidTR : public Uid11 
-{
-    static constexpr uint8_t time_bits = 22;
-    static constexpr auto epoch = std::chrono::system_clock::time_point( std::chrono::milliseconds( 1321009871111 ) );
-    static inline thread_local RandomU64 rand_u64;
+constexpr auto timepoint( const uint64_t payload ) noexcept {
+    const auto tp = epoch + std::chrono::milliseconds( payload >> random_bits );
+    return std::chrono::floor<std::chrono::milliseconds>( tp );
+}
 
-    XidTR() noexcept {
-        const uint64_t timeBits = time_since_epoch_ms() << 22;
-        const uint64_t randomBits = rand_u64() & mask_n( 22 );
-        bytes = timeBits | randomBits;
-    }
+auto timestamp( const uint64_t payload ) {
+    const auto tp = timepoint( payload );
+    return std::format( "{:%FT%T}Z", tp );
+}
 
-    constexpr XidTR( const uint64_t bytes ) noexcept : 
-        Uid11( bytes ) 
-    {}
-    
-    auto timestamp() const {
-        return epoch + std::chrono::milliseconds( bytes >> 22 );
-    }
+uint64_t xid() noexcept {
+    const uint64_t timeBits = ( time_since_unix_epoch_ms() - epochMs ) << ( random_bits );
+    const uint64_t randomBits = rand_u64() & mask_n( random_bits );
+    return timeBits | randomBits;
 };
 
 
-}   //  ::xid
+constexpr uint64_t encode_xid( const uint64_t timeSinceUnixEpochMs, const uint64_t random ) noexcept {
+    const uint64_t timeBits = ( timeSinceUnixEpochMs - epochMs ) << ( random_bits );
+    const uint64_t randomBits = random & mask_n( random_bits );
+    return timeBits | randomBits;
+};
+
+
+}   //  ::uid11
