@@ -11,42 +11,57 @@
 #include <thread>
 #include <functional>
 
+//==============================================================================
+//  uid11
+//
+//      Public surface is split into three layers:
+//
+//      uid11::          — format constants + pure codec + a profile-agnostic
+//                         random 64-bit generator. No clock, no profile.
+//      uid11::xid::     — the "xid" profile (42 bit ms timestamp | 22 bit
+//                         random), both pure packers and stateful generation.
+//      uid11::detail::  — implementation helpers (lookup table, PRNG, mask /
+//                         pow helpers). Not part of the stable API.
+//==============================================================================
+
 namespace uid11 {
 
 
-static constexpr std::string_view min_u64_b58 = "11111111111";
-static constexpr std::string_view max_u64_b58 = "jpXCZedGfVQ";
+////////////////////////////////////////////////////////////////////////////////
+//  format constants (base58 / 11 chars, bitcoin alphabet)
+////////////////////////////////////////////////////////////////////////////////
+
+inline constexpr std::string_view alphabet =
+    "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+inline constexpr uint8_t base   = static_cast<uint8_t>( alphabet.size() );
+inline constexpr uint8_t length = 11;
+
+inline constexpr std::string_view min_u64_b58 = "11111111111";
+inline constexpr std::string_view max_u64_b58 = "jpXCZedGfVQ";
 
 
 ////////////////////////////////////////////////////////////////////////////////
-//  base58 (bitcoin alphabet)
+//  detail: implementation helpers, not part of the stable API
 ////////////////////////////////////////////////////////////////////////////////
 
-static constexpr std::string_view alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-static constexpr uint8_t base = static_cast<uint8_t>( alphabet.size() );
-static constexpr uint8_t length = 11;
+namespace detail {
 
-static constexpr std::array<uint8_t, 256> make_index()
+constexpr std::array<uint8_t, 256> make_index() noexcept
 {
     std::array<uint8_t, 256> m {};
     m.fill( 0xff );
-            
+
     for ( uint8_t i = 0; i < alphabet.size(); ++i ) {
-        auto c = static_cast<uint8_t>( alphabet[ i ] );
-        m[ c ] = i;
+        m[ static_cast<uint8_t>( alphabet[ i ] ) ] = i;
     }
 
     return m;
 }
 
-static constexpr auto index = make_index();
+inline constexpr auto index = make_index();
 
 
-////////////////////////////////////////////////////////////////////////////////
-//  helper
-////////////////////////////////////////////////////////////////////////////////
-
-constexpr std::uint64_t mask_n( std::size_t bits ) noexcept {
+constexpr uint64_t mask_n( std::size_t bits ) noexcept {
     return bits >= 64 ? ~0ull : ( bits == 0 ? 0ull : ( ( 1ull << bits ) - 1ull ) );
 }
 
@@ -60,9 +75,10 @@ constexpr uint64_t pow_base( uint8_t e ) noexcept {
 }
 
 
-uint64_t time_since_unix_epoch_ms() noexcept {
+inline uint64_t time_since_unix_epoch_ms() noexcept {
     const auto now = std::chrono::system_clock::now();
-    const auto millis = std::chrono::duration_cast<std::chrono::milliseconds>( now.time_since_epoch() ).count();
+    const auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(
+        now.time_since_epoch() ).count();
     return static_cast<uint64_t>( millis );
 }
 
@@ -74,8 +90,8 @@ uint64_t time_since_unix_epoch_ms() noexcept {
 //    [2] https://prng.di.unimi.it/xoshiro256plusplus.c
 ////////////////////////////////////////////////////////////////////////////////
 
-struct xoshiro256pp 
-{    
+struct xoshiro256pp
+{
     xoshiro256pp() noexcept
     {
         //  Gather several entropy sources and fold them together so two
@@ -98,8 +114,8 @@ struct xoshiro256pp
         seed( value );
     }
 
-    constexpr uint64_t operator()() noexcept { 
-        return next(); 
+    constexpr uint64_t operator()() noexcept {
+        return next();
     }
 
     constexpr void seed( const uint64_t k ) noexcept
@@ -109,7 +125,7 @@ struct xoshiro256pp
         for ( int i = 0; i < 4; ++i ) {
             s[ i ] = splitmix64( sm );
         }
-        
+
         for ( int i = 0; i < 8; ++i ) {
             next();
         }
@@ -147,53 +163,12 @@ struct xoshiro256pp
 };
 
 
-////////////////////////////////////////////////////////////////////////////////
-//  encode / decode
-////////////////////////////////////////////////////////////////////////////////
-
-constexpr void encode_to( const uint64_t payload, char* buffer ) noexcept
-{
-    std::ranges::fill( buffer, buffer + 11, alphabet.front() );
-    uint64_t v = payload;
-    
-    for( int i = length - 1; i >= 0; --i ) {
-        buffer[ i ] = alphabet[ v % base ];
-        v /= base;
-    }
-}
+//  thread-local PRNG instance; shared by uid11::random and uid11::xid::generate
+inline thread_local xoshiro256pp rand_u64;
 
 
-[[nodiscard]] constexpr std::string encode( const uint64_t payload ) {
-    std::string s( length, 0 );
-    encode_to( payload, s.data() );
-    return s;
-}
-
-
-[[nodiscard]] constexpr bool is_valid_partial( std::string_view sv ) noexcept
-{
-    if ( sv.size() > 11 ) {
-        return false;
-    }
-
-    return std::ranges::none_of( sv, []( char c ) {
-        return index[ static_cast<uint8_t>( c ) ] == 0xff;
-    });
-}
-
-
-[[nodiscard]] constexpr bool is_valid( std::string_view sv ) noexcept
-{
-    if ( sv.size() != 11 ) {
-        return false;
-    }
-
-    return is_valid_partial( sv );
-}
-
-
-//  precondition: caller has already validated `str` via is_valid_partial,
-//  so every byte indexes a valid alphabet slot. Marked noexcept accordingly.
+//  Decodes an already-validated base58 prefix to its numeric value. Returns
+//  nullopt only on u64 overflow. Caller must have run is_valid_partial first.
 [[nodiscard]] constexpr std::optional<uint64_t> unpack( std::string_view str ) noexcept
 {
     uint64_t acc {};
@@ -213,6 +188,49 @@ constexpr void encode_to( const uint64_t payload, char* buffer ) noexcept
     return acc;
 }
 
+}   //  ::uid11::detail
+
+
+////////////////////////////////////////////////////////////////////////////////
+//  pure codec — no clock, no randomness, no global state
+////////////////////////////////////////////////////////////////////////////////
+
+constexpr void encode_to( const uint64_t payload, char* buffer ) noexcept
+{
+    std::ranges::fill( buffer, buffer + length, alphabet.front() );
+    uint64_t v = payload;
+
+    for ( int i = length - 1; i >= 0; --i ) {
+        buffer[ i ] = alphabet[ v % base ];
+        v /= base;
+    }
+}
+
+
+[[nodiscard]] constexpr std::string encode( const uint64_t payload ) {
+    std::string s( length, 0 );
+    encode_to( payload, s.data() );
+    return s;
+}
+
+
+[[nodiscard]] constexpr bool is_valid_partial( std::string_view sv ) noexcept
+{
+    if ( sv.size() > length ) {
+        return false;
+    }
+
+    return std::ranges::none_of( sv, []( char c ) {
+        return detail::index[ static_cast<uint8_t>( c ) ] == 0xff;
+    });
+}
+
+
+[[nodiscard]] constexpr bool is_valid( std::string_view sv ) noexcept
+{
+    return sv.size() == length && is_valid_partial( sv );
+}
+
 
 [[nodiscard]] constexpr std::optional<uint64_t> decode( std::string_view str ) noexcept
 {
@@ -220,85 +238,89 @@ constexpr void encode_to( const uint64_t payload, char* buffer ) noexcept
         return std::nullopt;
     }
 
-    return unpack( str );
+    return detail::unpack( str );
 }
 
 
 //  Returns the lower bound of the numeric range represented by a prefix of
 //  1..11 alphabet chars; equivalent to value(prefix) * 58^(11-N). See spec
-//  §3.6 / §4 for the range semantics. Uses integer exponentiation so the
-//  result is exact across the full u64 range.
+//  §3.6 / §4 for range semantics. Uses integer exponentiation so the result
+//  is exact across the full u64 range.
 [[nodiscard]] constexpr std::optional<uint64_t> decode_partial( std::string_view str ) noexcept
 {
     if ( ! is_valid_partial( str ) ) {
         return std::nullopt;
     }
 
-    return unpack( str ).transform( [ str ]( uint64_t acc ) {
-        return acc * pow_base( static_cast<uint8_t>( length - str.size() ) );
+    return detail::unpack( str ).transform( [ str ]( uint64_t acc ) {
+        return acc * detail::pow_base( static_cast<uint8_t>( length - str.size() ) );
     });
 }
 
 
 ////////////////////////////////////////////////////////////////////////////////
-//  random
-//    64 bit randomness
+//  profile-agnostic random 64-bit generation
 ////////////////////////////////////////////////////////////////////////////////
 
-static inline thread_local xoshiro256pp rand_u64;  
-
-
-constexpr uint64_t random() noexcept {
-    return rand_u64();
+[[nodiscard]] inline uint64_t random() noexcept {
+    return detail::rand_u64();
 }
 
-std::string random_string() noexcept {
-    return encode( rand_u64() );
+[[nodiscard]] inline std::string random_string() noexcept {
+    return encode( detail::rand_u64() );
 }
 
 
 ////////////////////////////////////////////////////////////////////////////////
-//  time & random
-//    42 bit milliseconds since xid epoch | 22 bit randomness
-//    rolls over 2109-05-15T07:35:11.103Z from unix epoch
-//    rolls over 2151-05-18T09:31:07.215Z from xid epoch
-//    xid epoch: 1321009871111 ms
+//  xid profile
+//      [ 42 bit ms since xid epoch | 22 bit random ]
+//      rolls over 2151-05-18T09:31:07.215Z (from xid epoch 2011-11-11T11:11:11.111Z)
 ////////////////////////////////////////////////////////////////////////////////
 
-static constexpr uint8_t time_bits = 42;
-static constexpr uint8_t random_bits = 64 - time_bits;
-static constexpr auto epoch_ms = 1321009871111;
-static constexpr auto epoch = std::chrono::system_clock::time_point( std::chrono::milliseconds( epoch_ms ) );
+namespace xid {
 
-constexpr auto timepoint( const uint64_t payload ) noexcept {
+inline constexpr uint8_t  time_bits   = 42;
+inline constexpr uint8_t  random_bits = 64 - time_bits;
+inline constexpr uint64_t epoch_ms    = 1321009871111;
+inline constexpr auto     epoch       =
+    std::chrono::system_clock::time_point( std::chrono::milliseconds( epoch_ms ) );
+
+
+//  pure: pack a wall-clock millisecond and a random field into a xid payload
+[[nodiscard]] constexpr uint64_t pack(
+    const uint64_t time_since_unix_epoch_ms,
+    const uint64_t random ) noexcept
+{
+    const uint64_t time_field   = ( time_since_unix_epoch_ms - epoch_ms ) << random_bits;
+    const uint64_t random_field = random & detail::mask_n( random_bits );
+    return time_field | random_field;
+}
+
+
+//  pure: extract the timestamp from a xid payload
+[[nodiscard]] constexpr auto timepoint( const uint64_t payload ) noexcept {
     const auto tp = epoch + std::chrono::milliseconds( payload >> random_bits );
     return std::chrono::floor<std::chrono::milliseconds>( tp );
 }
 
 
-auto timestamp( const uint64_t payload ) {
-    const auto tp = timepoint( payload );
-    return std::format( "{:%FT%T}Z", tp );
+//  pure: ISO-8601 string representation of a xid's timestamp
+[[nodiscard]] inline auto timestamp( const uint64_t payload ) {
+    return std::format( "{:%FT%T}Z", timepoint( payload ) );
 }
 
 
-uint64_t xid() noexcept {
-    const uint64_t timeBits = ( time_since_unix_epoch_ms() - epoch_ms ) << ( random_bits );
-    const uint64_t randomBits = rand_u64() & mask_n( random_bits );
-    return timeBits | randomBits;
+//  stateful: generate a fresh xid using the wall clock and the thread-local PRNG
+[[nodiscard]] inline uint64_t generate() noexcept {
+    return pack( detail::time_since_unix_epoch_ms(), detail::rand_u64() );
 }
 
 
-std::string xid_string() noexcept {
-    return encode( xid() );
+[[nodiscard]] inline std::string generate_string() noexcept {
+    return encode( generate() );
 }
 
-
-constexpr uint64_t pack( const uint64_t timeSinceUnixEpoch_ms, const uint64_t random ) noexcept {
-    const uint64_t timeBits = ( timeSinceUnixEpoch_ms - epoch_ms ) << ( random_bits );
-    const uint64_t randomBits = random & mask_n( random_bits );
-    return timeBits | randomBits;
-}
+}   //  ::uid11::xid
 
 
 }   //  ::uid11

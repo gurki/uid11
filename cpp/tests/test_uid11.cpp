@@ -61,9 +61,9 @@ TEST_CASE( "MIN / MAX string constants are correct", "[static]" )
 
 TEST_CASE( "xid layout is 42 time bits + 22 random bits", "[static][xid]" )
 {
-    STATIC_REQUIRE( uid11::time_bits == 42 );
-    STATIC_REQUIRE( uid11::random_bits == 22 );
-    REQUIRE( uid11::epoch_ms == 1321009871111 );
+    STATIC_REQUIRE( uid11::xid::time_bits == 42 );
+    STATIC_REQUIRE( uid11::xid::random_bits == 22 );
+    REQUIRE( uid11::xid::epoch_ms == 1321009871111 );
 }
 
 
@@ -99,8 +99,8 @@ TEST_CASE( "shared xid_pack vectors", "[vectors][xid]" )
         const auto expected = u64_from_decimal( v[ "u64" ].get<std::string>() );
         const auto text     = v[ "b58" ].get<std::string>();
 
-        const std::uint64_t now_ms = uid11::epoch_ms + delta_ms;
-        const auto packed = uid11::pack( now_ms, rand22 );
+        const std::uint64_t now_ms = uid11::xid::epoch_ms + delta_ms;
+        const auto packed = uid11::xid::pack( now_ms, rand22 );
 
         CAPTURE( delta_ms, rand22, expected, text );
         REQUIRE( packed == expected );
@@ -299,35 +299,35 @@ TEST_CASE( "lexicographic order matches numeric order", "[ordering][property]" )
 TEST_CASE( "pack then unpack preserves timestamp and random", "[xid][roundtrip]" )
 {
     const std::vector<std::pair<std::uint64_t, std::uint64_t>> cases = {
-        { uid11::epoch_ms,             0 },
-        { uid11::epoch_ms + 1,         0 },
-        { uid11::epoch_ms + 86400000,  0 },
-        { uid11::epoch_ms + 1234567,   ( 1u << 22 ) - 1 },
-        { uid11::epoch_ms + 999'000,   0xABCDE },
+        { uid11::xid::epoch_ms,             0 },
+        { uid11::xid::epoch_ms + 1,         0 },
+        { uid11::xid::epoch_ms + 86400000,  0 },
+        { uid11::xid::epoch_ms + 1234567,   ( 1u << 22 ) - 1 },
+        { uid11::xid::epoch_ms + 999'000,   0xABCDE },
     };
 
-    constexpr std::uint64_t rand_mask = ( 1ull << uid11::random_bits ) - 1ull;
+    constexpr std::uint64_t rand_mask = ( 1ull << uid11::xid::random_bits ) - 1ull;
 
     for ( const auto& [ now_ms, rnd ] : cases ) {
-        const auto payload = uid11::pack( now_ms, rnd );
+        const auto payload = uid11::xid::pack( now_ms, rnd );
 
-        const std::uint64_t recovered_delta_ms = payload >> uid11::random_bits;
+        const std::uint64_t recovered_delta_ms = payload >> uid11::xid::random_bits;
         const std::uint64_t recovered_rand     = payload & rand_mask;
 
         CAPTURE( now_ms, rnd, payload );
-        REQUIRE( recovered_delta_ms == now_ms - uid11::epoch_ms );
+        REQUIRE( recovered_delta_ms == now_ms - uid11::xid::epoch_ms );
         REQUIRE( recovered_rand     == ( rnd & rand_mask ) );
     }
 }
 
-TEST_CASE( "xid() places time in high 42 bits and random in low 22 bits", "[xid]" )
+TEST_CASE( "xid::generate places time in high 42 bits and random in low 22 bits", "[xid]" )
 {
-    constexpr std::uint64_t rand_mask = ( 1ull << uid11::random_bits ) - 1ull;
-    constexpr std::uint64_t time_mask = ( 1ull << uid11::time_bits   ) - 1ull;
+    constexpr std::uint64_t rand_mask = ( 1ull << uid11::xid::random_bits ) - 1ull;
+    constexpr std::uint64_t time_mask = ( 1ull << uid11::xid::time_bits   ) - 1ull;
 
     for ( int i = 0; i < 64; ++i ) {
-        const auto id = uid11::xid();
-        const std::uint64_t delta_ms = id >> uid11::random_bits;
+        const auto id = uid11::xid::generate();
+        const std::uint64_t delta_ms = id >> uid11::xid::random_bits;
         const std::uint64_t rnd      = id & rand_mask;
         CAPTURE( id, delta_ms, rnd );
         //  must fit in the declared field widths
@@ -336,15 +336,31 @@ TEST_CASE( "xid() places time in high 42 bits and random in low 22 bits", "[xid]
     }
 }
 
-TEST_CASE( "xid() reflects wall-clock time within a small window", "[xid][clock]" )
+TEST_CASE( "xid::generate reflects wall-clock time within a small window", "[xid][clock]" )
 {
-    const auto before = uid11::time_since_unix_epoch_ms();
-    const auto id     = uid11::xid();
-    const auto after  = uid11::time_since_unix_epoch_ms();
+    const auto before = uid11::detail::time_since_unix_epoch_ms();
+    const auto id     = uid11::xid::generate();
+    const auto after  = uid11::detail::time_since_unix_epoch_ms();
 
-    const std::uint64_t delta_ms = id >> uid11::random_bits;
-    const std::uint64_t id_ms    = uid11::epoch_ms + delta_ms;
+    const std::uint64_t delta_ms = id >> uid11::xid::random_bits;
+    const std::uint64_t id_ms    = uid11::xid::epoch_ms + delta_ms;
 
     REQUIRE( id_ms >= before );
     REQUIRE( id_ms <= after );
+}
+
+TEST_CASE( "xid::generate_string round-trips through decode and pack", "[xid][api]" )
+{
+    const auto s = uid11::xid::generate_string();
+    REQUIRE( s.size() == uid11::length );
+    REQUIRE( uid11::is_valid( s ) );
+    const auto v = uid11::decode( s );
+    REQUIRE( v.has_value() );
+
+    //  re-packing the recovered (ts, rand) yields the same payload
+    constexpr std::uint64_t rand_mask = ( 1ull << uid11::xid::random_bits ) - 1ull;
+    const auto delta_ms = *v >> uid11::xid::random_bits;
+    const auto rnd      = *v & rand_mask;
+    const auto repacked = uid11::xid::pack( uid11::xid::epoch_ms + delta_ms, rnd );
+    REQUIRE( repacked == *v );
 }
