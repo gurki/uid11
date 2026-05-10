@@ -36,12 +36,18 @@ int main()
     uint64_t max = UINT64_MAX;
     std::println( "max: {} -> {}", uid11::encode( max ), uid11::xid::timestamp( max ) );
 
-    //  streaming uid
+    //  streaming uid: decode_partial returns a [lower, upper] range for a
+    //  prefix of N alphabet chars. Lower bound corresponds to the earliest
+    //  matching uid, upper bound to the latest.
     const std::string_view enc = "24HZMr9t1qX";
 
     for ( int i = 0; i <= 11; i++ ) {
-        uint64_t uid { uid11::decode_partial( enc.substr( 0, i ) ).value() };
-        std::println( "{}: {} -> {}", i, uid11::encode( uid ), uid11::xid::timestamp( uid ) );
+        const auto r = uid11::decode_partial( enc.substr( 0, i ) ).value();
+        std::println( "{}: [{}, {}] -> {} .. {}",
+            i,
+            uid11::encode( r.lower ), uid11::encode( r.upper ),
+            uid11::xid::timestamp( r.lower ),
+            uid11::xid::timestamp( r.upper ) );
     }
 
     return EXIT_SUCCESS;

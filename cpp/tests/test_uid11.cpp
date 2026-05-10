@@ -108,6 +108,36 @@ TEST_CASE( "shared xid_pack vectors", "[vectors][xid]" )
     }
 }
 
+TEST_CASE( "shared decode_partial vectors", "[vectors][partial]" )
+{
+    const auto j = load_vectors();
+
+    for ( const auto& v : j[ "decode_partial" ] ) {
+        const auto s = v[ "s" ].get<std::string>();
+        const auto lower = u64_from_decimal( v[ "lower" ].get<std::string>() );
+        const auto upper = u64_from_decimal( v[ "upper" ].get<std::string>() );
+
+        CAPTURE( s, lower, upper );
+        const auto r = uid11::decode_partial( s );
+        REQUIRE( r.has_value() );
+        REQUIRE( r->lower == lower );
+        REQUIRE( r->upper == upper );
+    }
+}
+
+TEST_CASE( "shared decode_partial overflow vectors", "[vectors][partial][overflow]" )
+{
+    const auto j = load_vectors();
+
+    for ( const auto& v : j[ "decode_partial_overflow" ] ) {
+        const auto s = v[ "s" ].get<std::string>();
+        const std::string reason = v.value( "reason", std::string{} );
+
+        CAPTURE( s, reason );
+        REQUIRE_FALSE( uid11::decode_partial( s ).has_value() );
+    }
+}
+
 TEST_CASE( "shared invalid vectors are rejected", "[vectors][invalid]" )
 {
     const auto j = load_vectors();
@@ -206,26 +236,63 @@ TEST_CASE( "is_valid_partial accepts up to 11 alphabet chars", "[validate][parti
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-//  decode_partial: lower bound of the numeric range encoded by a prefix
+//  decode_partial: closed numeric range of u64 values matching a prefix
 ////////////////////////////////////////////////////////////////////////////////
 
-TEST_CASE( "decode_partial returns lower bound of prefix range", "[partial]" )
+TEST_CASE( "decode_partial: empty prefix is the whole u64 space", "[partial]" )
 {
-    //  Empty prefix -> the whole u64 space, lower bound 0.
-    REQUIRE( uid11::decode_partial( "" ) == 0 );
+    const auto r = uid11::decode_partial( "" );
+    REQUIRE( r.has_value() );
+    REQUIRE( r->lower == 0 );
+    REQUIRE( r->upper == std::numeric_limits<std::uint64_t>::max() );
+}
 
-    //  Full 11-char string must agree with decode().
-    REQUIRE( uid11::decode_partial( "11111111111" ) == 0 );
-    REQUIRE( uid11::decode_partial( "jpXCZedGfVQ" )
-             == std::numeric_limits<std::uint64_t>::max() );
+TEST_CASE( "decode_partial: full 11-char string is a single-value range", "[partial]" )
+{
+    auto r = uid11::decode_partial( "11111111111" );
+    REQUIRE( r.has_value() );
+    REQUIRE( r->lower == 0 );
+    REQUIRE( r->upper == 0 );
 
-    //  Single leading 'z' (alphabet idx 57) -> 57 * 58^10. Computed exactly:
-    //  58^10 = 430804206899405824
-    //  57 * 58^10 = 24555839793266131968
-    //  This is the case that overflows under the old std::pow implementation
-    //  because doubles only have 53 bits of mantissa.
-    REQUIRE( uid11::decode_partial( "z" ).has_value() );
-    REQUIRE( *uid11::decode_partial( "z" ) == 57ull * 430804206899405824ull );
+    r = uid11::decode_partial( "jpXCZedGfVQ" );
+    REQUIRE( r.has_value() );
+    REQUIRE( r->lower == std::numeric_limits<std::uint64_t>::max() );
+    REQUIRE( r->upper == std::numeric_limits<std::uint64_t>::max() );
+}
+
+TEST_CASE( "decode_partial: 1-char prefix has scale 58^10", "[partial]" )
+{
+    constexpr std::uint64_t pow58_10 = 430'804'206'899'405'824ULL;
+
+    auto r = uid11::decode_partial( "1" );
+    REQUIRE( r.has_value() );
+    REQUIRE( r->lower == 0 );
+    REQUIRE( r->upper == pow58_10 - 1 );
+
+    //  'i' has alphabet index 41; range fits entirely in u64
+    r = uid11::decode_partial( "i" );
+    REQUIRE( r.has_value() );
+    REQUIRE( r->lower == 41 * pow58_10 );
+    REQUIRE( r->upper == 41 * pow58_10 + pow58_10 - 1 );
+}
+
+TEST_CASE( "decode_partial: upper bound is clamped to u64_max", "[partial]" )
+{
+    //  'j' has alphabet index 42. lower = 42 * 58^10 still fits, but the
+    //  full range upper = lower + 58^10 - 1 would overflow u64. Spec says
+    //  clamp the upper bound.
+    constexpr std::uint64_t pow58_10 = 430'804'206'899'405'824ULL;
+    const auto r = uid11::decode_partial( "j" );
+    REQUIRE( r.has_value() );
+    REQUIRE( r->lower == 42 * pow58_10 );
+    REQUIRE( r->upper == std::numeric_limits<std::uint64_t>::max() );
+}
+
+TEST_CASE( "decode_partial: lower bound out of u64 -> nullopt", "[partial][overflow]" )
+{
+    //  'k' (idx 43) and 'z' (idx 57): lower = idx * 58^10 > u64_max.
+    REQUIRE_FALSE( uid11::decode_partial( "k" ).has_value() );
+    REQUIRE_FALSE( uid11::decode_partial( "z" ).has_value() );
 }
 
 TEST_CASE( "decode_partial agrees with decode on the full 11-char string", "[partial][property]" )
@@ -236,7 +303,10 @@ TEST_CASE( "decode_partial agrees with decode on the full 11-char string", "[par
         const auto s = uid11::encode( v );
         const auto a = uid11::decode( s );
         const auto b = uid11::decode_partial( s );
-        REQUIRE( a == b );
+        REQUIRE( a.has_value() );
+        REQUIRE( b.has_value() );
+        REQUIRE( b->lower == *a );
+        REQUIRE( b->upper == *a );
     }
 }
 

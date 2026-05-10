@@ -1,6 +1,8 @@
 # uid11: Fixed-length (11) Base58 identifier · Profile: **xid**
 
-**Spec version:** 1.0 (draft) · **Status:** Proposed Standard
+**Spec version:** 1.1 (draft) · **Status:** Proposed Standard
+
+> **Changes from 1.0:** prefix length range widened from `1..11` to `0..11`; added §4.1 normative u64 projection rules (clamp / no‑match for ranges crossing or exceeding `2^64 − 1`); added §4.2 informative test vectors; clarified §3.6, §7, and §8.4 wording accordingly.
 
 
 ## 1. Purpose & scope
@@ -20,7 +22,7 @@
 * **uid11** — the canonical 11-symbol text form over a 64‑bit payload.
 * **Profile** — a defined interpretation of the 64‑bit payload bits.
 * **xid** — the timestamped uid11 profile defined in this document (42‑bit ms | 22‑bit random).
-* **Prefix** — the first *N* symbols of a uid11 (1 ≤ *N* ≤ 11), representing a numeric range.
+* **Prefix** — the first *N* symbols of a uid11 (0 ≤ *N* ≤ 11), representing a numeric range. `N = 0` (the empty prefix) denotes the entire u64 space; `N = 11` denotes a single value.
 * **MSB-first** — leftmost text symbol encodes the highest‑order bits of the payload.
 
 
@@ -67,20 +69,14 @@ Accept exactly 11 symbols from the alphabet and map back to the 64‑bit payload
 
 ### 3.6 Partial decoding (prefix‑aware mode)
 
-Decoders operating in prefix‑aware mode **MAY** accept **1..11** symbols. For inputs of length N < 11, they **MUST** interpret the text as a numeric range per §4:
+Decoders operating in prefix‑aware mode **MAY** accept **0..11** symbols. For inputs of length N < 11, they **MUST** interpret the text as a numeric range per §4. For N = 11 the range degenerates to a single value and behaves identically to canonical strict decoding (§3.4).
 
-```
-scale      = 58^(11 - N)
-lowerBound = value(prefix) * scale
-upperBound = lowerBound + (scale - 1)
-```
-
-Implementations **MAY** return explicit `lowerBound`/`upperBound` bounds (or a range object).
+Implementations **MUST** return either a closed range `[lowerBound, upperBound]` or signal "no match" (`null` / `None` / `nullopt` / equivalent) per the u64 projection rules of §4.1.
 
 
 ## 4. Prefix semantics (normative for prefix-aware consumers)
 
-For a prefix `P` of length *N* (1 ≤ *N* ≤ 11), define:
+For a prefix `P` of length *N* (0 ≤ *N* ≤ 11), define:
 
 ```
 scale      = 58^(11 - N)
@@ -88,9 +84,38 @@ lowerBound = value(P) * scale
 upperBound = lowerBound + (scale - 1)
 ```
 
-A prefix **MUST** be interpreted as the **closed** numeric range `[lowerBound, upperBound]`.
+where `value(P)` is the base-58 numeric value of `P`, with `value("") = 0`.
+
+A prefix **MUST** be interpreted as the **closed** numeric range `[lowerBound, upperBound]`, subject to the u64 projection in §4.1.
 
 > Keeping the first *N* symbols preserves roughly `N·log2(58)` ≈ `5.858·N` most‑significant bits of the payload. For timestamped profiles with 42 time bits, approximate timestamp bucket sizes are: **N=6 → \~114 ms**, **N=7 → \~2 ms**, **N≥8 → 1 ms (full precision)**.
+
+### 4.1 Projection to the u64 payload space (normative)
+
+The 11‑character base‑58 string space contains `58^11 ≈ 2.50·10^19` values, larger than the `2^64 ≈ 1.84·10^19` u64 payload space. For a prefix range `[lowerBound, upperBound]`, three outcomes are possible:
+
+1. **Fully inside u64** (`upperBound ≤ 2^64 − 1`) — the range is returned unchanged.
+2. **Straddles the boundary** (`lowerBound ≤ 2^64 − 1 < upperBound`) — implementations **MUST** clamp the upper bound to `2^64 − 1`. The returned range is `[lowerBound, 2^64 − 1]`.
+3. **Fully outside u64** (`lowerBound > 2^64 − 1`) — the prefix matches no valid u64 payload. Implementations **MUST** signal "no match".
+
+Two corner cases are direct consequences of these rules:
+
+* For the empty prefix (`N = 0`), `scale = 58^11 > 2^64`, so the result is the closed range `[0, 2^64 − 1]` — the whole u64 space.
+* For a full 11‑character prefix (`N = 11`), `scale = 1`, so `lowerBound = upperBound = value(P)` and the rules reduce to canonical strict decoding (§3.4).
+
+### 4.2 Test vectors (informative)
+
+The repository's `test-vectors.json` is the canonical cross‑implementation reference; the table below mirrors a representative subset. All values are decimal.
+
+| Prefix         | Length | lowerBound                  | upperBound                  | Notes                                            |
+| -------------- | -----: | --------------------------: | --------------------------: | ------------------------------------------------ |
+| `""`           |      0 | `0`                         | `18446744073709551615`      | empty prefix → whole u64 space (§4.1 case 2)     |
+| `"1"`          |      1 | `0`                         | `430804206899405823`        | scale = 58¹⁰, fully inside u64                   |
+| `"i"`          |      1 | `17662972482875638784`      | `18093776689775044607`      | fully inside u64                                 |
+| `"j"`          |      1 | `18093776689775044608`      | `18446744073709551615`      | upper clamped from `42·58¹⁰ + 58¹⁰ − 1` (case 2) |
+| `"k"`          |      1 | — (no match)                | — (no match)                | lower = `43·58¹⁰ > 2^64 − 1` (case 3)            |
+| `"11111111111"`|     11 | `0`                         | `0`                         | degenerate range, scale = 1                      |
+| `"jpXCZedGfVQ"`|     11 | `18446744073709551615`      | `18446744073709551615`      | u64 maximum                                      |
 
 
 ## 5. Profiles & extensibility
@@ -119,7 +144,7 @@ Decoders **MUST** reject:
 * lengths ≠ 11;
 * out‑of‑alphabet characters.
 
-**Exception (prefix‑aware mode):** In partial decoding (§3.6), decoders **MUST NOT** reject lengths in 1..11; for N < 11 they **MUST** interpret the input as a numeric range per §4. They **MAY** return explicit bounds.
+**Exception (prefix‑aware mode):** In partial decoding (§3.6), decoders **MUST NOT** reject lengths in 0..11 on length grounds alone; for N < 11 they **MUST** interpret the input as a numeric range per §4 and apply the u64 projection of §4.1. A prefix whose entire range falls outside `[0, 2^64 − 1]` (§4.1 case 3) **MUST** be reported as "no match" rather than rejected as malformed.
 
 Encoders/decoders **MUST** apply profile‑specific validity rules (e.g., timestamp range checks) when a profile is in use.
 
@@ -164,7 +189,7 @@ rand_22   := payload & (2^22 - 1)
 timestamp := EPOCH + delta_ms milliseconds
 ```
 
-**Prefix‑aware parsing (optional):** For an input `text` of length N < 11, compute `lowerBound`/`upperBound` as in §3.6, then derive:
+**Prefix‑aware parsing (optional):** For an input `text` of length N < 11, compute `lowerBound`/`upperBound` as in §3.6 (applying the u64 projection of §4.1), then derive:
 
 ```
 ts_lo   = EPOCH + (lowerBound >> 22) milliseconds

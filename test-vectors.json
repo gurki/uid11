@@ -23,6 +23,18 @@
     { "delta_ms": "1",        "rand22": "0", "u64": "4194304",         "b58": "1111111NVpb" },
     { "delta_ms": "86400000", "rand22": "0", "u64": "362387865600000", "b58": "113q8KFkAEs" }
   ],
+  "decode_partial": [
+    { "s": "",            "lower": "0",                    "upper": "18446744073709551615", "note": "empty -> entire u64 range" },
+    { "s": "11111111111", "lower": "0",                    "upper": "0",                    "note": "full string (N=11), range degenerates to single value" },
+    { "s": "jpXCZedGfVQ", "lower": "18446744073709551615", "upper": "18446744073709551615", "note": "full string at u64 max" },
+    { "s": "1",           "lower": "0",                    "upper": "430804206899405823",   "note": "1-char prefix '1', scale = 58^10" },
+    { "s": "i",           "lower": "17662972482875638784", "upper": "18093776689775044607", "note": "high 1-char prefix, fully inside u64" },
+    { "s": "j",           "lower": "18093776689775044608", "upper": "18446744073709551615", "note": "1-char prefix 'j', upper clamped from 58^10-1 overflow" }
+  ],
+  "decode_partial_overflow": [
+    { "s": "k",  "reason": "lower = 43 * 58^10 > u64_max" },
+    { "s": "z",  "reason": "lower = 57 * 58^10 > u64_max" }
+  ],
   "invalid": [
     { "s": "",              "kind": "syntax",   "reason": "empty" },
     { "s": "1111111111",    "kind": "syntax",   "reason": "10 chars" },

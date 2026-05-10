@@ -242,19 +242,56 @@ constexpr void encode_to( const uint64_t payload, char* buffer ) noexcept
 }
 
 
-//  Returns the lower bound of the numeric range represented by a prefix of
-//  1..11 alphabet chars; equivalent to value(prefix) * 58^(11-N). See spec
-//  §3.6 / §4 for range semantics. Uses integer exponentiation so the result
-//  is exact across the full u64 range.
-[[nodiscard]] constexpr std::optional<uint64_t> decode_partial( std::string_view str ) noexcept
+//  Closed numeric range [lower, upper] of u64 values matching a base58 prefix.
+//  For a full 11-char string the range degenerates to a single value.
+struct prefix_range {
+    uint64_t lower;
+    uint64_t upper;
+    constexpr bool operator==( const prefix_range& ) const noexcept = default;
+};
+
+
+//  Decodes a 0..11 char base58 prefix to the closed range of u64 values it
+//  represents in the uid11 namespace. Returns std::nullopt if the prefix
+//  contains non-alphabet chars, is too long, or maps to a range that lies
+//  entirely outside [0, 2^64). See SPECIFICATION.md §3.6 / §4.
+//
+//  Behavior on edge cases:
+//      ""              -> { 0, 2^64 - 1 }   (the whole u64 space)
+//      11-char string  -> { v, v }          (same as decode())
+//      lower > u64_max -> std::nullopt
+//      upper > u64_max -> upper clamped to u64_max
+[[nodiscard]] constexpr std::optional<prefix_range> decode_partial( std::string_view str ) noexcept
 {
     if ( ! is_valid_partial( str ) ) {
         return std::nullopt;
     }
 
-    return detail::unpack( str ).transform( [ str ]( uint64_t acc ) {
-        return acc * detail::pow_base( static_cast<uint8_t>( length - str.size() ) );
-    });
+    constexpr uint64_t u64_max = std::numeric_limits<uint64_t>::max();
+
+    if ( str.empty() ) {
+        return prefix_range{ 0, u64_max };
+    }
+
+    const auto val = detail::unpack( str );
+    if ( ! val ) {
+        return std::nullopt;     //  full 11-char string overflowed u64
+    }
+
+    const uint8_t  n     = static_cast<uint8_t>( str.size() );
+    const uint64_t scale = detail::pow_base( static_cast<uint8_t>( length - n ) );
+
+    //  overflow guard: lower = *val * scale must fit in u64
+    if ( *val > u64_max / scale ) {
+        return std::nullopt;
+    }
+    const uint64_t lower = *val * scale;
+
+    //  upper = lower + scale - 1, clamped to u64_max on overflow
+    const uint64_t headroom = u64_max - lower;
+    const uint64_t upper = ( scale - 1 > headroom ) ? u64_max : lower + scale - 1;
+
+    return prefix_range{ lower, upper };
 }
 
 

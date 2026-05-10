@@ -13,7 +13,7 @@ from __future__ import annotations
 from datetime import datetime, timezone, timedelta
 import secrets
 import time
-from typing import Optional
+from typing import NamedTuple, Optional
 
 __version__ = "0.2.0"
 
@@ -74,16 +74,46 @@ def decode(s: str) -> Optional[int]:
     return _unpack(s)
 
 
-def decode_partial(s: str) -> Optional[int]:
-    """Return the lower bound of the numeric range encoded by a prefix.
+class PrefixRange(NamedTuple):
+    """Closed numeric range [lower, upper] of u64 values matching a base58
+    prefix. For a full 11-char string the range degenerates to a single value.
+    """
+    lower: int
+    upper: int
 
-    Equivalent to value(prefix) * 58^(11-N). See SPECIFICATION.md §3.6 / §4
-    for the full range semantics.
+
+def decode_partial(s: str) -> Optional[PrefixRange]:
+    """Closed range of u64 values matching a 0..11 char base58 prefix.
+
+    Returns None if the prefix contains non-alphabet chars, is too long, or
+    maps to a range that lies entirely outside [0, 2^64). See SPECIFICATION.md
+    §3.6 / §4.
+
+    Edge cases:
+        ""              -> (0, 2^64 - 1)   (the whole u64 space)
+        11-char string  -> (v, v)          (same as decode())
+        lower > u64_max -> None
+        upper > u64_max -> upper clamped to u64_max
     """
     if not is_valid_partial(s):
         return None
-    acc = _unpack(s)
-    return None if acc is None else acc * (BASE ** (LENGTH - len(s)))
+
+    if len(s) == 0:
+        return PrefixRange(0, _U64_MAX)
+
+    val = _unpack(s)
+    if val is None:
+        return None  # full 11-char string overflowed u64
+
+    n = len(s)
+    scale = BASE ** (LENGTH - n)
+    lower = val * scale
+    if lower > _U64_MAX:
+        return None
+    upper = lower + scale - 1
+    if upper > _U64_MAX:
+        upper = _U64_MAX
+    return PrefixRange(lower, upper)
 
 
 # ---------- profile-agnostic random 64-bit ----------
@@ -161,7 +191,7 @@ class xid:
 __all__ = [
     "ALPHABET", "BASE", "LENGTH",
     "MIN_U64_B58", "MAX_U64_B58",
-    "encode", "decode", "decode_partial",
+    "encode", "decode", "decode_partial", "PrefixRange",
     "is_valid", "is_valid_partial",
     "random", "random_string",
     "xid",

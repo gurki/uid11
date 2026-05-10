@@ -77,11 +77,39 @@ function unpack(s: string): bigint | null {
 
 export const decode = (s: string): bigint | null => (isValid(s) ? unpack(s) : null);
 
-export function decodePartial(s: string): bigint | null {
+/**
+ * Closed numeric range [lower, upper] of u64 values matching a base58 prefix.
+ * For a full 11-char string the range degenerates to a single value.
+ */
+export interface PrefixRange {
+  lower: bigint;
+  upper: bigint;
+}
+
+/**
+ * Closed range of u64 values matching a 0..11 char base58 prefix. Returns
+ * `null` if the prefix is invalid or maps to a range entirely outside
+ * `[0, 2^64)`. See SPECIFICATION.md §3.6 / §4.
+ *
+ * Edge cases:
+ *   ""              -> { lower: 0n, upper: 2^64 - 1n }   (the whole u64 space)
+ *   11-char string  -> { lower: v,  upper: v }           (same as decode())
+ *   lower > u64_max -> null
+ *   upper > u64_max -> upper clamped to u64_max
+ */
+export function decodePartial(s: string): PrefixRange | null {
   if (!isValidPartial(s)) return null;
+
+  if (s.length === 0) return { lower: 0n, upper: MASK64 };
+
   const acc = unpack(s);
   if (acc == null) return null;
-  return acc * (BASE ** BigInt(LENGTH - s.length));
+
+  const scale = BASE ** BigInt(LENGTH - s.length);
+  const lower = acc * scale;
+  if (lower > MASK64) return null;
+  const upper = lower + scale - 1n;
+  return { lower, upper: upper > MASK64 ? MASK64 : upper };
 }
 
 /* ---------- profile-agnostic random 64-bit ---------- */
