@@ -105,6 +105,12 @@ TEST_CASE( "shared xid_pack vectors", "[vectors][xid]" )
         CAPTURE( delta_ms, rand22, expected, text );
         REQUIRE( packed == expected );
         REQUIRE( uid11::encode( packed ) == text );
+
+        //  inverse direction: unpack must agree with the same vectors
+        const auto u = uid11::xid::unpack( packed );
+        REQUIRE( u.unix_ms == now_ms );
+        REQUIRE( u.random  == rand22 );
+        REQUIRE( uid11::xid::random_field( packed ) == rand22 );
     }
 }
 
@@ -417,6 +423,27 @@ TEST_CASE( "xid::generate reflects wall-clock time within a small window", "[xid
 
     REQUIRE( id_ms >= before );
     REQUIRE( id_ms <= after );
+}
+
+TEST_CASE( "pack <-> unpack round-trip", "[xid][api][property]" )
+{
+    constexpr std::uint64_t rand_mask = ( 1ull << uid11::xid::random_bits ) - 1ull;
+
+    std::mt19937_64 rng( 0xDEADBEEF );
+
+    for ( int i = 0; i < 1000; ++i ) {
+        //  random delta in [0, 2^42), random 22-bit tie-breaker
+        const std::uint64_t delta = rng() & ( ( 1ull << uid11::xid::time_bits ) - 1ull );
+        const std::uint64_t rnd   = rng() & rand_mask;
+        const std::uint64_t now   = uid11::xid::epoch_ms + delta;
+
+        const auto p = uid11::xid::pack( now, rnd );
+        const auto u = uid11::xid::unpack( p );
+        REQUIRE( u.unix_ms == now );
+        REQUIRE( u.random  == rnd );
+        REQUIRE( uid11::xid::pack( u.unix_ms, u.random ) == p );
+        REQUIRE( uid11::xid::random_field( p ) == rnd );
+    }
 }
 
 TEST_CASE( "xid::generate_string round-trips through decode and pack", "[xid][api]" )

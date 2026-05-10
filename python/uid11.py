@@ -82,6 +82,18 @@ class PrefixRange(NamedTuple):
     upper: int
 
 
+class _Unpacked(NamedTuple):
+    """Decomposed xid: the inverse of ``xid.pack``. ``unix_ms`` is symmetric
+    with ``pack``'s first parameter (ms since the Unix epoch).
+    """
+    unix_ms: int
+    random: int
+
+
+#  Public alias: discoverable as ``uid11.xid.Unpacked`` (attached below).
+Unpacked = _Unpacked
+
+
 def decode_partial(s: str) -> Optional[PrefixRange]:
     """Closed range of u64 values matching a 0..11 char base58 prefix.
 
@@ -164,6 +176,21 @@ class xid:
         return (time_field | rand_field) & _U64_MAX
 
     @staticmethod
+    def random_field(payload: int) -> int:
+        """22-bit random tie-breaker extracted from a xid payload."""
+        return payload & xid._rand_mask
+
+    @staticmethod
+    def unpack(payload: int) -> "_Unpacked":
+        """Full inverse of pack(). Returns ``(unix_ms, random)`` such that
+        ``pack(*unpack(p)) == p``.
+        """
+        return _Unpacked(
+            unix_ms=(payload >> xid.random_bits) + xid.epoch_ms,
+            random=payload & xid._rand_mask,
+        )
+
+    @staticmethod
     def timepoint(payload: int) -> datetime:
         """UTC datetime (ms precision) extracted from a xid payload."""
         ms_since_epoch = payload >> xid.random_bits
@@ -188,12 +215,16 @@ class xid:
         return encode(xid.generate())
 
 
+#  Expose the nested types under the xid namespace for discoverability:
+#  uid11.xid.Unpacked, uid11.xid.PrefixRange (the latter purely as a courtesy).
+xid.Unpacked = Unpacked         # type: ignore[attr-defined]
+
 __all__ = [
     "ALPHABET", "BASE", "LENGTH",
     "MIN_U64_B58", "MAX_U64_B58",
     "encode", "decode", "decode_partial", "PrefixRange",
     "is_valid", "is_valid_partial",
     "random", "random_string",
-    "xid",
+    "xid", "Unpacked",
     "__version__",
 ]

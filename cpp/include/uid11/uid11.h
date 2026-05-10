@@ -323,6 +323,15 @@ inline constexpr auto     epoch       =
     std::chrono::system_clock::time_point( std::chrono::milliseconds( epoch_ms ) );
 
 
+//  Decomposed xid: the inverse of pack(). unix_ms is symmetric with pack()'s
+//  first parameter (ms since the Unix epoch, not the xid epoch).
+struct unpacked {
+    uint64_t unix_ms;
+    uint64_t random;
+    constexpr bool operator==( const unpacked& ) const noexcept = default;
+};
+
+
 //  pure: pack a wall-clock millisecond and a random field into a xid payload
 [[nodiscard]] constexpr uint64_t pack(
     const uint64_t time_since_unix_epoch_ms,
@@ -331,6 +340,22 @@ inline constexpr auto     epoch       =
     const uint64_t time_field   = ( time_since_unix_epoch_ms - epoch_ms ) << random_bits;
     const uint64_t random_field = random & detail::mask_n( random_bits );
     return time_field | random_field;
+}
+
+
+//  pure: extract the 22-bit random tie-breaker from a xid payload
+[[nodiscard]] constexpr uint64_t random_field( const uint64_t payload ) noexcept {
+    return payload & detail::mask_n( random_bits );
+}
+
+
+//  pure: full inverse of pack(). Returns { unix_ms, random } such that
+//  pack(u.unix_ms, u.random) == payload.
+[[nodiscard]] constexpr unpacked unpack( const uint64_t payload ) noexcept {
+    return {
+        ( payload >> random_bits ) + epoch_ms,
+        payload & detail::mask_n( random_bits ),
+    };
 }
 
 

@@ -124,11 +124,37 @@ export namespace xid {
   export const RANDOM_BITS = 64 - TIME_BITS;
   export const EPOCH_MS = 1321009871111n; // 2011-11-11T11:11:11.111Z
 
+  /**
+   * Decomposed xid: the inverse of {@link pack}. `unixMs` is symmetric with
+   * `pack`'s first parameter (ms since the Unix epoch).
+   */
+  export interface Unpacked {
+    unixMs: bigint;
+    random: bigint;
+  }
+
   /** pure: pack a wall-clock ms time and a random integer into a xid payload */
   export function pack(timeSinceUnixEpochMs: bigint | number, rnd: bigint | number): bigint {
     const t = (toU64(timeSinceUnixEpochMs) - EPOCH_MS) << BigInt(RANDOM_BITS);
     const r = toU64(rnd) & maskN(RANDOM_BITS);
     return (t | r) & MASK64;
+  }
+
+  /** pure: 22-bit random tie-breaker extracted from a xid payload */
+  export function randomField(payload: bigint | number): bigint {
+    return toU64(payload) & maskN(RANDOM_BITS);
+  }
+
+  /**
+   * pure: full inverse of {@link pack}. Returns `{ unixMs, random }` such that
+   * `pack(u.unixMs, u.random) === payload`.
+   */
+  export function unpack(payload: bigint | number): Unpacked {
+    const v = toU64(payload);
+    return {
+      unixMs: (v >> BigInt(RANDOM_BITS)) + EPOCH_MS,
+      random: v & maskN(RANDOM_BITS),
+    };
   }
 
   /** pure: timestamp from a xid payload as a JS Date */
