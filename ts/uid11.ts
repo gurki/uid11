@@ -1,24 +1,37 @@
-// uid11.ts — Base58 (Bitcoin alphabet), 64-bit payloads, xid helpers.
+// uid11.ts — Base58 (Bitcoin alphabet), 64-bit payloads, xid profile.
+//
+// Public surface mirrors the C++ layered API:
+//
+//   top-level exports — format constants + pure codec + profile-agnostic
+//                       random 64-bit generator
+//   `xid` namespace  — the xid profile (42 bit ms timestamp | 22 bit random),
+//                       both pure packers and stateful generation
 
-const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-const BASE = 58n;
-const LENGTH = 11;
+export const VERSION = "0.2.0";
 
+/* ---------- format constants ---------- */
+
+export const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+export const BASE = 58n;
+export const LENGTH = 11;
 export const MIN_U64_B58 = "11111111111";
 export const MAX_U64_B58 = "jpXCZedGfVQ";
 
 const MASK64 = (1n << 64n) - 1n;
+
 const IDX = (() => {
   const a = new Int16Array(256).fill(-1);
   for (let i = 0; i < ALPHABET.length; i++) a[ALPHABET.charCodeAt(i)] = i;
   return a;
 })();
 
-const toU64 = (x: bigint | number) => {
+const toU64 = (x: bigint | number): bigint => {
   const v = typeof x === "bigint" ? x : BigInt(x);
   if (v < 0n || v > MASK64) throw new RangeError("value must be in [0, 2^64-1]");
   return v;
 };
+
+const maskN = (bits: number) => (bits >= 64 ? MASK64 : (1n << BigInt(bits)) - 1n);
 
 /* ---------- crypto-secure randomness (no fallback) ---------- */
 
@@ -30,7 +43,7 @@ function randomBits(n: number): bigint {
   return n % 8 ? (v & ((1n << BigInt(n)) - 1n)) : v;
 }
 
-/* ---------- encode / decode ---------- */
+/* ---------- pure codec (no clock, no rand) ---------- */
 
 export function isValidPartial(s: string): boolean {
   if (s.length > LENGTH) return false;
@@ -38,7 +51,7 @@ export function isValidPartial(s: string): boolean {
   return true;
 }
 
-export const isValid = (s: string) => s.length === LENGTH && isValidPartial(s);
+export const isValid = (s: string): boolean => s.length === LENGTH && isValidPartial(s);
 
 export function encode(payload: bigint | number): string {
   let v = toU64(payload);
@@ -50,6 +63,7 @@ export function encode(payload: bigint | number): string {
   return out.join("");
 }
 
+//  caller must have run isValidPartial first; only returns null on u64 overflow
 function unpack(s: string): bigint | null {
   let acc = 0n;
   for (let i = 0; i < s.length; i++) {
@@ -61,7 +75,8 @@ function unpack(s: string): bigint | null {
   return acc;
 }
 
-export const decode = (s: string) => (isValid(s) ? unpack(s) : null);
+export const decode = (s: string): bigint | null => (isValid(s) ? unpack(s) : null);
+
 export function decodePartial(s: string): bigint | null {
   if (!isValidPartial(s)) return null;
   const acc = unpack(s);
@@ -69,48 +84,51 @@ export function decodePartial(s: string): bigint | null {
   return acc * (BASE ** BigInt(LENGTH - s.length));
 }
 
-/* ---------- crypto-random helpers ---------- */
+/* ---------- profile-agnostic random 64-bit ---------- */
 
 export const random = (): bigint => randomBits(64);
 export const randomString = (): string => encode(random());
 
-/* ---------- XID-style time+random (42|22) ---------- */
+/* ---------- xid profile: [ 42 bit ms timestamp | 22 bit random ] ---------- */
 
-const TIME_BITS = 42;
-const RANDOM_BITS = 64 - TIME_BITS;
-export const EPOCH_MS = 1321009871111n; // 2011-11-11T11:11:11.111Z
+export namespace xid {
+  export const TIME_BITS = 42;
+  export const RANDOM_BITS = 64 - TIME_BITS;
+  export const EPOCH_MS = 1321009871111n; // 2011-11-11T11:11:11.111Z
 
-const maskN = (bits: number) => (bits >= 64 ? MASK64 : (1n << BigInt(bits)) - 1n);
+  /** pure: pack a wall-clock ms time and a random integer into a xid payload */
+  export function pack(timeSinceUnixEpochMs: bigint | number, rnd: bigint | number): bigint {
+    const t = (toU64(timeSinceUnixEpochMs) - EPOCH_MS) << BigInt(RANDOM_BITS);
+    const r = toU64(rnd) & maskN(RANDOM_BITS);
+    return (t | r) & MASK64;
+  }
 
-export function pack(timeSinceUnixEpochMs: bigint | number, random: bigint | number): bigint {
-  const t = (toU64(timeSinceUnixEpochMs) - EPOCH_MS) << BigInt(RANDOM_BITS);
-  const r = toU64(random) & maskN(RANDOM_BITS);
-  return (t | r) & MASK64;
-}
+  /** pure: timestamp from a xid payload as a JS Date */
+  export function timepoint(payload: bigint | number): Date {
+    const v = toU64(payload);
+    return new Date(Number((v >> BigInt(RANDOM_BITS)) + EPOCH_MS));
+  }
 
-export function xid(): bigint {
-  const now = BigInt(Date.now());
-  const t = (now - EPOCH_MS) << BigInt(RANDOM_BITS);
-  const r = randomBits(RANDOM_BITS) & maskN(RANDOM_BITS);
-  return (t | r) & MASK64;
-}
+  /** pure: ISO-8601 timestamp from a xid payload */
+  export function timestamp(payload: bigint | number): string {
+    return timepoint(payload).toISOString();
+  }
 
-export const xidString = (): string => encode(xid());
+  /** stateful: fresh xid using wall clock + crypto randomness */
+  export function generate(): bigint {
+    return pack(BigInt(Date.now()), randomBits(RANDOM_BITS));
+  }
 
-export function timepoint(payload: bigint | number): Date {
-  const v = toU64(payload);
-  return new Date(Number((v >> BigInt(RANDOM_BITS)) + EPOCH_MS));
-}
-
-export function timestamp(payload: bigint | number): string {
-  return timepoint(payload).toISOString();
+  /** stateful: base58-encoded fresh xid */
+  export const generateString = (): string => encode(generate());
 }
 
 export default {
+  VERSION,
   ALPHABET, BASE, LENGTH,
   MIN_U64_B58, MAX_U64_B58,
   isValid, isValidPartial,
   encode, decode, decodePartial,
   random, randomString,
-  xid, xidString, pack, timepoint, timestamp, epochMs: EPOCH_MS,
+  xid,
 };

@@ -12,16 +12,16 @@ def main():
     n = uid11.decode(s)
     print(f"decoded integer: {n}")
 
-    x = uid11.xid()
+    x = uid11.xid.generate()
     print(f"xid integer: {x}")
 
-    tp = uid11.timepoint(x)
+    tp = uid11.xid.timepoint(x)
     print(f"timepoint from xid: {tp}")
 
-    ts = uid11.timestamp(x)
+    ts = uid11.xid.timestamp(x)
     print(f"timestamp from xid: {ts}")
 
-    xs = uid11.xid_string()
+    xs = uid11.xid.generate_string()
     print(f"xid base58 string: {xs}")
 
 if __name__ == "__main__":

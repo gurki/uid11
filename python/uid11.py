@@ -1,4 +1,13 @@
-# uid11.py — tiny Base58 uid helpers (Bitcoin alphabet) + time-random XID
+# uid11.py — Base58 uid helpers (Bitcoin alphabet) + time-random xid profile.
+#
+# Public surface mirrors the C++ layered API:
+#
+#   uid11.*       — format constants + pure codec + profile-agnostic random
+#   uid11.xid.*   — the xid profile (42 bit ms timestamp | 22 bit random),
+#                   both pure packers and stateful generation
+#
+# Anything prefixed with `_` is implementation detail and not part of the
+# stable API.
 
 from __future__ import annotations
 from datetime import datetime, timezone, timedelta
@@ -6,24 +15,22 @@ import secrets
 import time
 from typing import Optional
 
-# Constants (match the original)
+__version__ = "0.2.0"
+
+# ---------- format constants ----------
+
 ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-BASE = len(ALPHABET)  # 58
+BASE = len(ALPHABET)                    # 58
 LENGTH = 11
-MIN_U64_B58 = "11111111111"            # encode(0)
-MAX_U64_B58 = "jpXCZedGfVQ"            # encode(2**64 - 1)
+MIN_U64_B58 = "11111111111"             # encode(0)
+MAX_U64_B58 = "jpXCZedGfVQ"             # encode(2**64 - 1)
 
-# Time+random layout (mirrors header: 42 time bits, 22 random bits)
-TIME_BITS = 42
-RAND_BITS = 64 - TIME_BITS             # 22
-EPOCH_MS = 1321009871111               # 2011-11-11T11:11:11.111Z
-_EPOCH = datetime.fromtimestamp(EPOCH_MS / 1000, tz=timezone.utc)
-_RAND_MASK = (1 << RAND_BITS) - 1
-
-# Precompute decode map
+# precomputed alphabet -> index map for decoding
 _INDEX = {c: i for i, c in enumerate(ALPHABET)}
+_U64_MAX = (1 << 64) - 1
 
-# ---------- Base58 encode/decode for 64-bit payloads ----------
+
+# ---------- pure codec ----------
 
 def encode(payload: int) -> str:
     """Encode 0 <= payload < 2**64 into an 11-char Base58 string."""
@@ -36,22 +43,29 @@ def encode(payload: int) -> str:
         v //= BASE
     return "".join(out)
 
+
 def _unpack(s: str) -> Optional[int]:
+    """Decode an already-validated prefix; returns None only on u64 overflow."""
     acc = 0
     for ch in s:
         val = _INDEX.get(ch)
         if val is None:
             return None
         acc = acc * BASE + val
+        if acc > _U64_MAX:
+            return None
     return acc
 
+
 def is_valid_partial(s: str) -> bool:
-    """True if s <= 11 chars and all chars are in the Base58 alphabet."""
+    """True if s has 0..11 chars, all from the Base58 alphabet."""
     return len(s) <= LENGTH and all(ch in _INDEX for ch in s)
+
 
 def is_valid(s: str) -> bool:
     """True if s is exactly 11 Base58 chars."""
     return len(s) == LENGTH and is_valid_partial(s)
+
 
 def decode(s: str) -> Optional[int]:
     """Decode an 11-char Base58 string into int, or None if invalid."""
@@ -59,55 +73,90 @@ def decode(s: str) -> Optional[int]:
         return None
     return _unpack(s)
 
+
 def decode_partial(s: str) -> Optional[int]:
-    """
-    Decode a prefix (<= 11 chars). Returns the value left-shifted in base58
-    so it occupies the high-order positions of the 11-char space.
+    """Return the lower bound of the numeric range encoded by a prefix.
+
+    Equivalent to value(prefix) * 58^(11-N). See SPECIFICATION.md §3.6 / §4
+    for the full range semantics.
     """
     if not is_valid_partial(s):
         return None
     acc = _unpack(s)
     return None if acc is None else acc * (BASE ** (LENGTH - len(s)))
 
-# ---------- Randomness ----------
+
+# ---------- profile-agnostic random 64-bit ----------
 
 def random() -> int:
     """Cryptographically strong 64-bit random integer."""
     return secrets.randbits(64)
 
+
 def random_string() -> str:
     """11-char Base58 string encoding a random 64-bit number."""
     return encode(random())
 
-# ---------- Time + random XID (42 time bits ms since EPOCH, 22 random bits) ----------
+
+# ---------- xid profile (42 bit ms timestamp | 22 bit random) ----------
 
 def _now_ms() -> int:
     return int(time.time() * 1000)
 
-def xid() -> int:
-    """64-bit ID: high 42 bits = ms since EPOCH_MS, low 22 bits = randomness."""
-    time_bits = (_now_ms() - EPOCH_MS) << RAND_BITS
-    rand_bits = secrets.randbits(RAND_BITS) & _RAND_MASK
-    return (time_bits | rand_bits) & ((1 << 64) - 1)
 
-def xid_string() -> str:
-    """Base58-encoded xid()."""
-    return encode(xid())
+class xid:
+    """xid profile namespace.
 
-def timepoint(payload: int) -> datetime:
-    """UTC datetime (ms precision) extracted from a packed payload/xid."""
-    ms_since_epoch = (payload >> RAND_BITS)
-    return _EPOCH + timedelta(milliseconds=ms_since_epoch)
+    Layout: [ 42 bit ms since epoch | 22 bit random ]
+    Epoch:  2011-11-11T11:11:11.111Z (epoch_ms = 1321009871111)
+    Rollover: 2151-05-18T09:31:07.215Z from xid epoch.
 
-def timestamp(payload: int) -> str:
-    """ISO 8601 'Z' timestamp (milliseconds) from payload/xid."""
-    return timepoint(payload).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    Used as a namespace; never instantiated. Access members as
+    ``uid11.xid.generate()``, ``uid11.xid.pack(...)`` etc.
+    """
 
-def pack(time_since_unix_epoch_ms: int, rnd: int) -> int:
-    """Compose a payload from absolute unix time (ms) and a random integer."""
-    time_bits = (time_since_unix_epoch_ms - EPOCH_MS) << RAND_BITS
-    rand_bits = rnd & _RAND_MASK
-    return (time_bits | rand_bits) & ((1 << 64) - 1)
+    time_bits = 42
+    random_bits = 64 - time_bits        # 22
+    epoch_ms = 1321009871111
+    _epoch = datetime.fromtimestamp(epoch_ms / 1000, tz=timezone.utc)
+    _rand_mask = (1 << random_bits) - 1
+
+    def __init__(self) -> None:         # pragma: no cover
+        raise TypeError("uid11.xid is a namespace and cannot be instantiated")
+
+    # -- pure --
+
+    @staticmethod
+    def pack(time_since_unix_epoch_ms: int, rnd: int) -> int:
+        """Compose a payload from absolute unix-ms time and a random integer."""
+        time_field = (time_since_unix_epoch_ms - xid.epoch_ms) << xid.random_bits
+        rand_field = rnd & xid._rand_mask
+        return (time_field | rand_field) & _U64_MAX
+
+    @staticmethod
+    def timepoint(payload: int) -> datetime:
+        """UTC datetime (ms precision) extracted from a xid payload."""
+        ms_since_epoch = payload >> xid.random_bits
+        return xid._epoch + timedelta(milliseconds=ms_since_epoch)
+
+    @staticmethod
+    def timestamp(payload: int) -> str:
+        """ISO 8601 'Z' timestamp (milliseconds) from a xid payload."""
+        tp = xid.timepoint(payload)
+        return tp.strftime("%Y-%m-%dT%H:%M:%S.") + f"{tp.microsecond // 1000:03d}Z"
+
+    # -- stateful --
+
+    @staticmethod
+    def generate() -> int:
+        """Fresh xid: high 42 bits = ms since epoch, low 22 bits = randomness."""
+        return xid.pack(_now_ms(), secrets.randbits(xid.random_bits))
+
+    @staticmethod
+    def generate_string() -> str:
+        """Base58-encoded fresh xid."""
+        return encode(xid.generate())
+
 
 __all__ = [
     "ALPHABET", "BASE", "LENGTH",
@@ -115,5 +164,6 @@ __all__ = [
     "encode", "decode", "decode_partial",
     "is_valid", "is_valid_partial",
     "random", "random_string",
-    "xid", "xid_string", "timepoint", "timestamp", "pack",
+    "xid",
+    "__version__",
 ]

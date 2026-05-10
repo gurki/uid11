@@ -1,10 +1,14 @@
-import { xid, xidString, random, randomString, timepoint, timestamp, encode } from "../uid11";
+import { encode, decode, random, randomString, xid } from "../uid11";
 
 
-console.log( random() );
-console.log( randomString() );
-console.log( xid() );
-console.log( encode( xid() ) );
-console.log( xidString() );
-console.log( timepoint( xid() ) );
-console.log( timestamp( xid() ) );
+console.log(random());
+console.log(randomString());
+console.log(xid.generate());
+console.log(encode(xid.generate()));
+console.log(xid.generateString());
+console.log(xid.timepoint(xid.generate()));
+console.log(xid.timestamp(xid.generate()));
+
+//  round-trip the codec
+const s = randomString();
+console.log(s, "->", decode(s));

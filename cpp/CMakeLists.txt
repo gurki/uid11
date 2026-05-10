@@ -1,11 +1,14 @@
 cmake_minimum_required( VERSION 3.28 FATAL_ERROR )
 
 project( uid11
-	VERSION 0.1.0
+	VERSION 0.2.0
 	DESCRIPTION "flexible, url-safe, single-header 64bit uid in 11 characters"
 	HOMEPAGE_URL "https://github.com/gurki/uid11"
 	LANGUAGES CXX
 )
+
+#  0.2.0 introduces a namespaced API split (uid11::xid::* and uid11::detail::*).
+#  See cpp/include/uid11/uid11.h for the layered surface.
 
 include( GNUInstallDirs )
 include( CMakePackageConfigHelpers )
