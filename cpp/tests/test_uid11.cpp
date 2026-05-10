@@ -17,7 +17,7 @@
 #include <string>
 #include <vector>
 
-#include "uid11.h"
+#include <uid11/uid11.h>
 
 using json = nlohmann::json;
 
@@ -204,6 +204,61 @@ TEST_CASE( "is_valid_partial accepts up to 11 alphabet chars", "[validate][parti
     REQUIRE_FALSE( uid11::is_valid_partial( "abc0" ) );          // '0'
     REQUIRE_FALSE( uid11::is_valid_partial( "abcO" ) );          // 'O'
 }
+
+////////////////////////////////////////////////////////////////////////////////
+//  decode_partial: lower bound of the numeric range encoded by a prefix
+////////////////////////////////////////////////////////////////////////////////
+
+TEST_CASE( "decode_partial returns lower bound of prefix range", "[partial]" )
+{
+    //  Empty prefix -> the whole u64 space, lower bound 0.
+    REQUIRE( uid11::decode_partial( "" ) == 0 );
+
+    //  Full 11-char string must agree with decode().
+    REQUIRE( uid11::decode_partial( "11111111111" ) == 0 );
+    REQUIRE( uid11::decode_partial( "jpXCZedGfVQ" )
+             == std::numeric_limits<std::uint64_t>::max() );
+
+    //  Single leading 'z' (alphabet idx 57) -> 57 * 58^10. Computed exactly:
+    //  58^10 = 430804206899405824
+    //  57 * 58^10 = 24555839793266131968
+    //  This is the case that overflows under the old std::pow implementation
+    //  because doubles only have 53 bits of mantissa.
+    REQUIRE( uid11::decode_partial( "z" ).has_value() );
+    REQUIRE( *uid11::decode_partial( "z" ) == 57ull * 430804206899405824ull );
+}
+
+TEST_CASE( "decode_partial agrees with decode on the full 11-char string", "[partial][property]" )
+{
+    std::mt19937_64 rng( 0xFEEDFACE );
+    for ( int i = 0; i < 1000; ++i ) {
+        const std::uint64_t v = rng();
+        const auto s = uid11::encode( v );
+        const auto a = uid11::decode( s );
+        const auto b = uid11::decode_partial( s );
+        REQUIRE( a == b );
+    }
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+//  signed-char / high-byte input safety (regression: index lookup with negative char was UB)
+////////////////////////////////////////////////////////////////////////////////
+
+TEST_CASE( "high-byte input is rejected, not UB", "[validate][regression]" )
+{
+    //  Build a string containing a byte > 0x7F.  On platforms with signed
+    //  char this used to feed a negative index into std::array::operator[].
+    std::string s = "1111111111";
+    s.push_back( static_cast<char>( 0xFF ) );
+
+    REQUIRE( s.size() == 11 );
+    REQUIRE_FALSE( uid11::is_valid( s ) );
+    REQUIRE_FALSE( uid11::is_valid_partial( s ) );
+    REQUIRE_FALSE( uid11::decode( s ).has_value() );
+    REQUIRE_FALSE( uid11::decode_partial( s ).has_value() );
+}
+
 
 TEST_CASE( "decoder rejects overflow into 65th bit", "[overflow]" )
 {
