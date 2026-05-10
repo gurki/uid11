@@ -13,9 +13,9 @@ LENGTH = 11
 MIN_U64_B58 = "11111111111"            # encode(0)
 MAX_U64_B58 = "jpXCZedGfVQ"            # encode(2**64 - 1)
 
-# Time+random layout (mirrors header: 44 time bits, 20 random bits)
-TIME_BITS = 44
-RAND_BITS = 64 - TIME_BITS             # 20
+# Time+random layout (mirrors header: 42 time bits, 22 random bits)
+TIME_BITS = 42
+RAND_BITS = 64 - TIME_BITS             # 22
 EPOCH_MS = 1321009871111               # 2011-11-11T11:11:11.111Z
 _EPOCH = datetime.fromtimestamp(EPOCH_MS / 1000, tz=timezone.utc)
 _RAND_MASK = (1 << RAND_BITS) - 1
@@ -79,13 +79,13 @@ def random_string() -> str:
     """11-char Base58 string encoding a random 64-bit number."""
     return encode(random())
 
-# ---------- Time + random XID (44 time bits ms since EPOCH, 20 random bits) ----------
+# ---------- Time + random XID (42 time bits ms since EPOCH, 22 random bits) ----------
 
 def _now_ms() -> int:
     return int(time.time() * 1000)
 
 def xid() -> int:
-    """64-bit ID: high 44 bits = ms since EPOCH_MS, low 20 bits = randomness."""
+    """64-bit ID: high 42 bits = ms since EPOCH_MS, low 22 bits = randomness."""
     time_bits = (_now_ms() - EPOCH_MS) << RAND_BITS
     rand_bits = secrets.randbits(RAND_BITS) & _RAND_MASK
     return (time_bits | rand_bits) & ((1 << 64) - 1)

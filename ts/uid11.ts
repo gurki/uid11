@@ -74,9 +74,9 @@ export function decodePartial(s: string): bigint | null {
 export const random = (): bigint => randomBits(64);
 export const randomString = (): string => encode(random());
 
-/* ---------- XID-style time+random (44|20) ---------- */
+/* ---------- XID-style time+random (42|22) ---------- */
 
-const TIME_BITS = 44;
+const TIME_BITS = 42;
 const RANDOM_BITS = 64 - TIME_BITS;
 export const EPOCH_MS = 1321009871111n; // 2011-11-11T11:11:11.111Z
 

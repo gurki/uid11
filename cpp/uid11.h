@@ -239,7 +239,7 @@ std::string random_string() noexcept {
 //    xid epoch: 1321009871111 ms
 ////////////////////////////////////////////////////////////////////////////////
 
-static constexpr uint8_t time_bits = 44;
+static constexpr uint8_t time_bits = 42;
 static constexpr uint8_t random_bits = 64 - time_bits;
 static constexpr auto epoch_ms = 1321009871111;
 static constexpr auto epoch = std::chrono::system_clock::time_point( std::chrono::milliseconds( epoch_ms ) );

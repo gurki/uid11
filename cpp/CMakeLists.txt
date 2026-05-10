@@ -20,7 +20,13 @@ target_include_directories( ${PROJECT_NAME}
 )
 
 option( UID11_BUILD_EXAMPLES "Build uid11 examples" ${PROJECT_IS_TOP_LEVEL} )
+option( UID11_BUILD_TESTS    "Build uid11 tests"    ${PROJECT_IS_TOP_LEVEL} )
 
 if ( UID11_BUILD_EXAMPLES )
 	add_subdirectory( examples )
+endif()
+
+if ( UID11_BUILD_TESTS )
+	enable_testing()
+	add_subdirectory( tests )
 endif()

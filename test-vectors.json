@@ -1,0 +1,35 @@
+{
+  "_comment": "Canonical cross-language test vectors for uid11 / xid. Numeric values are decimal strings to avoid JSON precision loss on 64-bit values. All implementations (cpp, python, ts, nim) MUST agree on every vector.",
+  "spec_version": "1.0",
+  "layout": {
+    "length": 11,
+    "base": 58,
+    "alphabet": "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz",
+    "time_bits": 42,
+    "random_bits": 22,
+    "epoch_ms": "1321009871111"
+  },
+  "encode": [
+    { "u64": "0",                    "b58": "11111111111", "note": "zero" },
+    { "u64": "1",                    "b58": "11111111112", "note": "one" },
+    { "u64": "57",                   "b58": "1111111111z", "note": "alphabet boundary (base-1)" },
+    { "u64": "58",                   "b58": "11111111121", "note": "base carry" },
+    { "u64": "4194304",              "b58": "1111111NVpb", "note": "1 << 22 (xid ts=1, r=0)" },
+    { "u64": "362387865600000",      "b58": "113q8KFkAEs", "note": "xid ts=86400000ms, r=0" },
+    { "u64": "18446744073709551615", "b58": "jpXCZedGfVQ", "note": "u64 max" }
+  ],
+  "xid_pack": [
+    { "delta_ms": "0",        "rand22": "0", "u64": "0",               "b58": "11111111111" },
+    { "delta_ms": "1",        "rand22": "0", "u64": "4194304",         "b58": "1111111NVpb" },
+    { "delta_ms": "86400000", "rand22": "0", "u64": "362387865600000", "b58": "113q8KFkAEs" }
+  ],
+  "invalid": [
+    { "s": "",              "kind": "syntax",   "reason": "empty" },
+    { "s": "1111111111",    "kind": "syntax",   "reason": "10 chars" },
+    { "s": "111111111111",  "kind": "syntax",   "reason": "12 chars" },
+    { "s": "0000000000O",   "kind": "syntax",   "reason": "contains '0' and 'O' (not in alphabet)" },
+    { "s": "1111111111l",   "kind": "syntax",   "reason": "contains 'l' (not in alphabet)" },
+    { "s": "1111111111I",   "kind": "syntax",   "reason": "contains 'I' (not in alphabet)" },
+    { "s": "jpXCZedGfVR",   "kind": "overflow", "reason": "decodes to 2^64, overflows u64" }
+  ]
+}
